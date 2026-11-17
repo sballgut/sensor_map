@@ -33,13 +33,16 @@ fun CampusMapPanel(
     location: MapLocationState, modifier: Modifier = Modifier,
     onDestinationSelected: (String) -> Unit,
     onRequestLocation: () -> Unit, onOpenLocationSettings: () -> Unit,
-    permissionDenied: Boolean = false, headingDegrees: Double? = null
+    permissionDenied: Boolean = false, headingDegrees: Double? = null, initiallyFollowing: Boolean = true
 ) {
     var show3d by remember { mutableStateOf(false) }
-    var zoom by remember { mutableFloatStateOf(1f) }
+    val previewPoints=if(!initiallyFollowing) route?.nodes?.map { it.position }.orEmpty() else emptyList()
+    val initialCenter=if(previewPoints.isEmpty()) campus.center else Point((previewPoints.minOf { it.x }+previewPoints.maxOf { it.x })/2,(previewPoints.minOf { it.y }+previewPoints.maxOf { it.y })/2)
+    val initialZoom=if(previewPoints.isEmpty()) 1f else min(campus.mapWidth/(previewPoints.maxOf { it.x }-previewPoints.minOf { it.x }+150),campus.mapHeight/(previewPoints.maxOf { it.y }-previewPoints.minOf { it.y }+150)).toFloat().coerceIn(.5f,8f)
+    var zoom by remember { mutableFloatStateOf(initialZoom) }
     var pan by remember { mutableStateOf(Offset.Zero) }
-    var center by remember(campus) { mutableStateOf(campus.center) }
-    var following by remember { mutableStateOf(true) }
+    var center by remember(campus) { mutableStateOf(initialCenter) }
+    var following by remember { mutableStateOf(initiallyFollowing) }
     val fix=location.fix
     val current=fix?.let { projectWgs84(it.latitude,it.longitude,campus.originLatitude,campus.originLongitude) }
     val outside=current?.let { !containsPoint(it,campus.boundary) } == true

@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import kr.ac.campusroute.ui.shared.SharedRoutesScreen
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
@@ -32,11 +34,22 @@ class MainActivity : ComponentActivity() {
                 val state by model.state.collectAsStateWithLifecycle()
                 val location = rememberDeviceLocation()
                 LaunchedEffect(location.state) { model.updateLocation(location.state) }
+                var tab by rememberSaveable { mutableIntStateOf(0) }
                 BackHandler(state.navigating) { if (state.mapPreview) model.toggleMap() else model.end() }
                 Surface(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         if (state.navigating && !state.mapPreview) NavigationScreen(model, state, location.headingDegrees)
-                        else HomeScreen(model, state, location)
+                        else if(state.navigating) HomeScreen(model,state,location)
+                        else Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                if(tab==0) HomeScreen(model,state,location)
+                                else SharedRoutesScreen(model,state,location)
+                            }
+                            NavigationBar {
+                                NavigationBarItem(selected=tab==0,onClick={tab=0; model.clearMessage()},icon={Text("⌖")},label={Text("지도")})
+                                NavigationBarItem(selected=tab==1,onClick={tab=1; model.clearMessage()},icon={Text("⇄")},label={Text("공유 경로")})
+                            }
+                        }
                     }
                 }
             }

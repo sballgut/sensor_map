@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "id": "example-campus-route-1",
+  "title": "시험용 공유 경로 · 123학군단 인근",
+  "destinationId": "way/452602259",
+  "mapVersion": "gaesin-osm-2026-11-17-v1",
+  "nodeIds": [
+    "6339086685",
+    "6339086686"
+  ]
+}

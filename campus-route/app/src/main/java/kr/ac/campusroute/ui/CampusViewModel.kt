@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.*
 import kr.ac.campusroute.domain.model.*
 import kr.ac.campusroute.location.*
 import kr.ac.campusroute.routing.*
+import kr.ac.campusroute.sharing.*
 
 data class CampusState(
     val destination: String? = null,
@@ -76,6 +77,24 @@ class CampusViewModel(val campus: Campus, private val planner: RoutePlanner = AS
             mutable.update { it.copy(route=route,navigating=true,mapPreview=false,travelled=0.0,offRoute=false,arrived=false,planning=false,message=null) }
             updateLocation(state.value.location)
         }
+    }
+    fun clearMessage() { mutable.update { it.copy(message=null) } }
+    fun startShared(shared: SharedRoute) {
+        val snapshot=state.value
+        val fix=snapshot.location.fix
+        if(!snapshot.location.canFollow || fix==null || (fix.accuracyMetres ?: Double.MAX_VALUE)>30) {
+            mutable.update { it.copy(message="정확한 현재 위치를 수신한 뒤 시작해 주세요.") }; return
+        }
+        val route=runCatching { shared.resolve(campus) }.getOrElse { problem ->
+            mutable.update { it.copy(message=problem.message) }; return
+        }
+        val position=projectWgs84(fix.latitude,fix.longitude,campus.originLatitude,campus.originLongitude)
+        if(!containsPoint(position,campus.boundary) || position.distance(route.nodes.first().position)>30) {
+            mutable.update { it.copy(message="공유 경로의 시작점 30m 이내로 이동한 뒤 시작해 주세요.") }; return
+        }
+        planning?.cancel(); arrival.reset(); lastFix=null
+        mutable.update { it.copy(destination=shared.destinationId,route=route,navigating=true,mapPreview=false,travelled=0.0,offRoute=false,arrived=false,planning=false,message=null) }
+        updateLocation(state.value.location)
     }
     fun end() { planning?.cancel(); arrival.reset(); mutable.update { it.copy(navigating=false,mapPreview=false,planning=false) } }
     fun toggleMap() { mutable.update { it.copy(mapPreview=!it.mapPreview) } }

@@ -1,5 +1,13 @@
 # 검증 기록
 
+## 받은 공유 경로 탭
+
+- 하단 탭, 빈 목록, 파일 선택기 JSON 가져오기, 목록/상세 지도, 공유 경로 안내, 삭제 확인을 추가했다.
+- assembleDebug / testDebugUnitTest / lintDebug 성공. JVM 64개 통과(공유 경로 검증 8개 추가), 실패/오류 0개.
+- API 37 에뮬레이터에서 시험 JSON을 시스템 파일 선택기로 가져오기, 상세 표시, 시작점 근처에서 공유받은 경로 안내 시작, 앱 재설치/재시작 후 목록 유지, 삭제 후 빈 목록을 확인했다. 시험 자료는 검증 후 삭제했다. AndroidRuntime 오류 없음.
+- screenshots/shared-routes-list.png 및 shared-route-detail.png는 실제 타인 기록이 아닌 시험 자료 화면이다. 실제 서버·링크 수신 및 현장 보행 검증은 아니다.
+
+
 ## 공유 경로 색상 변경
 
 - RouteOrigin.SHARED는 2D/3D에서 초록색, LOCAL은 파란색으로 표시한다. 공유 수신 기능 자체는 미연결이다.
