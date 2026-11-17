@@ -12,6 +12,7 @@ import android.os.*;
 import android.view.*;
 import android.widget.*;
 import com.google.gson.*;
+import com.example.sensorae.ui.d1.DestinationHomeView;
 import java.io.*;
 import java.net.*;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,8 @@ public final class MainActivity extends Activity {
     private CheckBox consent;
     private EditText url,token,declination,reference,description;
     private TextView summary,logView,mapView;
+    private ViewFlipper screens;
+    private DestinationHomeView destinationHome;
     private String sessionId,deviceId,activeMode="guidance";
     private volatile boolean running,destroyed;
     private boolean sessionConsent,replaying;
@@ -77,14 +80,21 @@ public final class MainActivity extends Activity {
         locations=(LocationManager)getSystemService(LOCATION_SERVICE);
         heading=new HeadingTracker(this,v->{headingState=v;long at=generation;if(!destroyed)inference.execute(()->{if(!destroyed&&running&&at==generation)bridge.heading(v);});},()->getWindowManager().getDefaultDisplay().getRotation());
         buildUi();
+        destinationHome.restoreSelection(state);
+        if(state!=null)screens.setDisplayedChild(state.getBoolean("d1.collection",false)?1:0);
         bridge.setErrorListener((operation,error)->note("B/D 연결 오류 · "+operation+" · "+safe(error)));
         bridge.setPositionSink(value->{main.post(()->recordPosition(value));});
         io.execute(()->{try{List<PublicApi.SensorSnapshot> cached=publicApi.cachedMap();main.post(()->renderMap(cached,"캐시"));}catch(Exception ex){note("캐시 없음 · 센서 목록 새로고침을 누르세요.");}});
         main.post(statusTick);main.postDelayed(uploadTick,30_000);
     }
     private void buildUi(){
-        ScrollView scroll=new ScrollView(this);LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);int padding=(int)(16*getResources().getDisplayMetrics().density);box.setPadding(padding,padding,padding,padding);scroll.addView(box);setContentView(scroll);
-        if(Build.VERSION.SDK_INT>=30){scroll.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});scroll.requestApplyInsets();}
+        screens=new ViewFlipper(this);
+        destinationHome=new DestinationHomeView(this,()->{((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(screens.getWindowToken(),0);screens.setDisplayedChild(1);});
+        screens.addView(destinationHome,new ViewGroup.LayoutParams(-1,-1));
+        ScrollView scroll=new ScrollView(this);LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);int padding=(int)(16*getResources().getDisplayMetrics().density);box.setPadding(padding,padding,padding,padding);scroll.addView(box);
+        screens.addView(scroll,new ViewGroup.LayoutParams(-1,-1));setContentView(screens);
+        if(Build.VERSION.SDK_INT>=30){screens.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});screens.requestApplyInsets();}
+        button(box,"← 목적지 검색으로",()->{((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(screens.getWindowToken(),0);screens.setDisplayedChild(0);});
         TextView title=new TextView(this);title.setText("Sensor A·E · 수집 실험실");title.setTextSize(25);box.addView(title);
         TextView intro=new TextView(this);intro.setText("34개 센서 레지스트리 / 주변 BLE 관측 / 팀 서버 전송\n안내는 GPS 미사용 모드입니다. 실제 길 안내 UI는 B·C·D 연동 후 추가합니다.");box.addView(intro);
         mode=new Spinner(this);mode.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"안내 · GPS 미사용","수집 · GPS 라벨","평가 · GPS 라벨"}));box.addView(mode);
@@ -221,6 +231,7 @@ public final class MainActivity extends Activity {
     @Override protected void onActivityResult(int r,int result,Intent data){super.onActivityResult(r,result,data);if(r==200&&result==RESULT_OK&&data!=null&&data.getData()!=null){Uri uri=data.getData();int kind=exportKind;io.execute(()->{try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException("저장 위치 열기 실패");if(kind==1)store.exportCsv(out);else{File f=new File(getFilesDir(),"candidate_positions.jsonl");if(f.exists())try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}}note("내보내기 완료");}catch(Exception e){note("내보내기 실패 · "+safe(e));}});}}
     private String safe(Exception e){return e.getClass().getSimpleName()+": "+(e.getMessage()==null?"":e.getMessage());}
     private void note(String text){main.post(()->{if(destroyed||logView==null)return;String old=logView.getText().toString();String msg=text.length()>2000?text.substring(0,2000):text;logView.setText(msg+"\n\n"+old.substring(0,Math.min(6000,old.length())));});}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if(destinationHome!=null)destinationHome.saveSelection(state);if(screens!=null)state.putBoolean("d1.collection",screens.getDisplayedChild()==1);}
     @Override protected void onStop(){stop();super.onStop();}
     @Override protected void onDestroy(){stop();destroyed=true;main.removeCallbacksAndMessages(null);network.shutdown();inference.shutdown();
         // Close DB only after all accepted observation writes and upload ACKs finish.
