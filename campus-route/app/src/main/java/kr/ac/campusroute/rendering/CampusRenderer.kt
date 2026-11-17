@@ -102,16 +102,17 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         glDepthMask(true); glEnable(GL_DEPTH_TEST)
         draw(buildingMesh, buildingMesh.capacity() / 4, floatArrayOf(.98f,.98f,.98f,1f))
         val blue = floatArrayOf(.10f,.38f,.98f,1f)
-        val done = floatArrayOf(.66f,.66f,.66f,1f)
+        val routeColor = if (route.origin == RouteOrigin.SHARED) floatArrayOf(22f/255,131f/255,74f/255,1f) else blue
+        val done = if (route.origin == RouteOrigin.SHARED) floatArrayOf(.55f,.73f,.62f,1f) else floatArrayOf(.66f,.66f,.66f,1f)
         route.nodes.zipWithNext().forEachIndexed { index, (a, b) ->
             when {
                 pose.arrived || index < pose.segment -> road(a.position, b.position, 1.8f, .16f, done)
                 index == pose.segment -> {
                     val matched = routePose(route, route.geometricDistance - pose.remaining).position
                     road(a.position, matched, 1.8f, .16f, done)
-                    road(matched, b.position, 1.8f, .16f, blue)
+                    road(matched, b.position, 1.8f, .16f, routeColor)
                 }
-                else -> road(a.position, b.position, 1.8f, .16f, blue)
+                else -> road(a.position, b.position, 1.8f, .16f, routeColor)
             }
         }
         if (!pose.arrived && pose.instruction != "목적지까지 직진") {

@@ -1,5 +1,10 @@
 # 검증 기록
 
+## 공유 경로 색상 변경
+
+- RouteOrigin.SHARED는 2D/3D에서 초록색, LOCAL은 파란색으로 표시한다. 공유 수신 기능 자체는 미연결이다.
+- assembleDebug / testDebugUnitTest / lintDebug 성공. 기존 56개 테스트 통과. 공유 수신 화면의 기기 검증은 수행하지 않았다.
+
 ## 2026-11-17 D-1/D-2 실제 위치 안내 통합
 
 - d1-ui 0590c14의 Java 검색/상세창을 가져와 D-2 Compose/OpenGL 지도와 연결했다. 원본 검색 테스트 12개 유지.

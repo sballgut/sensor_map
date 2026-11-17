@@ -12,6 +12,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.*
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import kr.ac.campusroute.rendering.CampusRenderer
+import kr.ac.campusroute.domain.model.RouteOrigin
+import androidx.compose.ui.graphics.Color
 import kr.ac.campusroute.routing.routePose
 import kr.ac.campusroute.location.projectWgs84
 import kr.ac.campusroute.ui.map.locationMessage
@@ -55,7 +57,7 @@ fun NavigationScreen(model: CampusViewModel, state: CampusState, headingDegrees:
         AndroidView(factory = { surface }, modifier = Modifier.fillMaxSize())
         Card(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(16.dp)) {
             Column(Modifier.padding(16.dp)) {
-                Text("3D 보행 안내 · 기기 위치", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Text(if(route.origin == RouteOrigin.SHARED) "3D 보행 안내 · 공유받은 경로" else "3D 보행 안내 · 기기 위치", style = MaterialTheme.typography.labelLarge, color = if(route.origin == RouteOrigin.SHARED) Color(0xFF16834A) else MaterialTheme.colorScheme.primary)
                 Text(if (pose.arrived) "목적지 인근 도착" else if(!usable) "정확한 위치 수신 대기" else if(state.offRoute) "경로 이탈" else "${ceil(pose.nextDistance).toInt()} m  ${pose.instruction}", style = MaterialTheme.typography.headlineSmall)
                 Text("${model.campus.destinations.first { it.id == state.destination }.name} · 남은 거리 ${ceil(pose.remaining).toInt()} m")
                 Text(locationMessage(state.location), style = MaterialTheme.typography.bodySmall)

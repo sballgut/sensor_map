@@ -139,7 +139,7 @@ private fun CampusMap(campus: Campus, route: Route?, current: Point?, accuracy: 
             } else drawRect(Color(0xFFF8F8F8), c - Offset(dim.width / 2, dim.height / 2), dim)
             if (zoom >= 2.5f && b.name.isNotBlank()) drawContext.canvas.nativeCanvas.drawText(b.name, c.x, c.y + 4.dp.toPx(), paint)
         }
-        route?.nodes?.zipWithNext()?.forEach { (a, b) -> drawLine(Color(0xFF2166F3), point(a.position), point(b.position), 4.dp.toPx(), StrokeCap.Round) }
+        route?.nodes?.zipWithNext()?.forEach { (a, b) -> drawLine(if (route.origin == RouteOrigin.SHARED) Color(0xFF16834A) else Color(0xFF2166F3), point(a.position), point(b.position), 4.dp.toPx(), StrokeCap.Round) }
         campus.destinations.forEach { drawCircle(Color(0xFF999999), 2.dp.toPx(), point(campus.byId.getValue(it.nodeId).position)) }
         campus.destinations.firstOrNull { it.id == selected }?.let {
             val destination = point(campus.byId.getValue(it.nodeId).position)

@@ -26,7 +26,9 @@ data class Campus(val version: String, val name: String, val nodes: List<Node>, 
         require(edges.all { it.from in byId && it.to in byId && it.distance.isFinite() && it.distance > 0 })
     }
 }
-data class Route(val nodes: List<Node>, val totalDistance: Double) {
+enum class RouteOrigin { LOCAL, SHARED }
+
+data class Route(val nodes: List<Node>, val totalDistance: Double, val origin: RouteOrigin = RouteOrigin.LOCAL) {
     init { require(nodes.isNotEmpty()) }
     val geometricDistance = nodes.zipWithNext().sumOf { (a, b) -> a.position.distance(b.position) }
 }
