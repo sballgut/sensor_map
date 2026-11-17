@@ -75,12 +75,16 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         val dt = if (previousTime == 0L) 0.016 else ((now - previousTime) / 1e9).coerceIn(0.0, 0.1)
         previousTime = now
         val pose = target // One immutable snapshot shared from the Compose/UI thread.
-        if (!previouslyVisible || avatarPosition.distance(pose.position) > 100) avatarPosition = pose.position
+        // Coordinates are the accepted measurement, not an independently animated simulation.
+        avatarPosition = pose.position
+        cameraPosition = pose.position
+        if (!previouslyVisible || !userMarkerReliable) {
+            avatarHeading=pose.heading; cameraHeading=pose.heading
+        } else {
+            avatarHeading = smoothHeading(avatarHeading, pose.heading, dt)
+            cameraHeading = smoothHeading(cameraHeading, pose.heading, dt)
+        }
         previouslyVisible = showUserMarker
-        avatarPosition = avatarPosition.interpolate(pose.position, 1 - exp(-dt * 12))
-        avatarHeading = smoothHeading(avatarHeading, pose.heading, dt)
-        cameraPosition = cameraPosition.interpolate(avatarPosition, 1 - exp(-dt * 6))
-        cameraHeading = smoothHeading(cameraHeading, pose.heading, dt)
         val dx = sin(cameraHeading).toFloat(); val dz = -cos(cameraHeading).toFloat()
         val x = cameraPosition.x.toFloat(); val z = -cameraPosition.y.toFloat()
         Matrix.setLookAtM(view, 0, x - dx * 19, 15f, z - dz * 19, x + dx * 13, 0f, z + dz * 13, 0f, 1f, 0f)

@@ -45,9 +45,9 @@ public final class DestinationHomeView extends LinearLayout {
         super(context);
         setOrientation(VERTICAL); setBackgroundColor(Color.rgb(247, 249, 247));
 
-        LinearLayout header = row(); header.setPadding(dp(18), dp(12), dp(12), dp(4));
+        LinearLayout header = row(); header.setPadding(dp(16), dp(6), dp(12), dp(2));
         LinearLayout heading = column();
-        TextView name = text("충북대 캠퍼스", 23, INK); name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        TextView name = text("충북대 캠퍼스", 20, INK); name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         heading.addView(name);
         modeLabel = text("시험 모드 · 목적지 예시", 12, GREEN); heading.addView(modeLabel);
         header.addView(heading, new LayoutParams(0, -2, 1));
@@ -65,7 +65,7 @@ public final class DestinationHomeView extends LinearLayout {
         searchBox.addView(search, new LayoutParams(0, dp(50), 1));
         Button clear = button("지우기", () -> { search.setText(""); controller.clearSelection(); renderSheet(); });
         clear.setContentDescription("검색어와 목적지 선택 지우기"); searchBox.addView(clear, new LayoutParams(-2, dp(48)));
-        LayoutParams searchParams = new LayoutParams(-1, -2); searchParams.setMargins(dp(16), dp(10), dp(16), dp(8));
+        LayoutParams searchParams = new LayoutParams(-1, -2); searchParams.setMargins(dp(16), dp(4), dp(16), dp(4));
         addView(searchBox, searchParams);
 
         locationStatus = text("현재 위치 수신 대기", 12, MUTED); locationStatus.setPadding(dp(20), 0, dp(20), dp(8)); addView(locationStatus);
@@ -88,14 +88,14 @@ public final class DestinationHomeView extends LinearLayout {
         ScrollView sheetScroll = new ScrollView(context) {
             @Override protected void onMeasure(int widthSpec, int heightSpec) {
                 int available = DestinationHomeView.this.getHeight();
-                int cap = available > 0 ? Math.round(available * .48f) : dp(280);
+                int cap = available > 0 ? Math.round(available * .36f) : dp(280);
                 int parentMode = MeasureSpec.getMode(heightSpec), parentSize = MeasureSpec.getSize(heightSpec);
                 if (parentMode != MeasureSpec.UNSPECIFIED) cap = Math.min(cap, parentSize);
                 super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(Math.max(0, cap), MeasureSpec.AT_MOST));
             }
         };
         sheetScroll.setBackground(background(Color.WHITE, 20));
-        sheet = column(); sheet.setPadding(dp(20), dp(14), dp(20), dp(16)); sheetScroll.addView(sheet);
+        sheet = column(); sheet.setPadding(dp(16), dp(8), dp(16), dp(8)); sheetScroll.addView(sheet);
         addView(sheetScroll, new LayoutParams(-1, -2));
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
@@ -147,7 +147,7 @@ public final class DestinationHomeView extends LinearLayout {
         Destination selected = controller.selected();
         if (selected != null) {
             LinearLayout titleRow = row();
-            TextView title = text(selected.name, 22, INK); title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            TextView title = text(selected.name, 18, INK); title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
             titleRow.addView(title, new LayoutParams(0, -2, 1));
             titleRow.addView(button("선택 취소", () -> { controller.clearSelection(); renderSheet(); }), new LayoutParams(-2, dp(48)));
             sheet.addView(titleRow);

@@ -27,13 +27,15 @@ class CampusViewModel(val campus: Campus, private val planner: RoutePlanner = AS
     private var planning: Job?=null
     private val arrival=ArrivalTracker()
     private var lastFix: MapFix?=null
+    private val locationGate=LiveLocationGate(campus.originLatitude,campus.originLongitude)
     fun select(id: String?) {
         if(id!=null && campus.destinations.none { it.id==id }) return
         if(state.value.navigating) return
         planning?.cancel()
         mutable.update { it.copy(destination=id,route=null,message=null,planning=false,arrived=false) }
     }
-    fun updateLocation(location: MapLocationState) {
+    fun updateLocation(input: MapLocationState) {
+        val location=locationGate.update(input)
         mutable.update { it.copy(location=location) }
         val fix=location.fix ?: return
         if(!location.canFollow || (fix.accuracyMetres ?: Double.MAX_VALUE)>30) { arrival.reset(); return }
@@ -42,15 +44,7 @@ class CampusViewModel(val campus: Campus, private val planner: RoutePlanner = AS
         if(!current.navigating || current.arrived) return
         if(lastFix?.elapsedRealtimeMs==fix.elapsedRealtimeMs) return
         val point=projectWgs84(fix.latitude,fix.longitude,campus.originLatitude,campus.originLongitude)
-        val old=lastFix
         lastFix=fix
-        if(old!=null) {
-            val elapsed=(fix.elapsedRealtimeMs-old.elapsedRealtimeMs)/1000.0
-            val previous=projectWgs84(old.latitude,old.longitude,campus.originLatitude,campus.originLongitude)
-            if(elapsed<=0 || point.distance(previous)>maxOf(40.0,elapsed*6)) {
-                arrival.reset(); mutable.update { it.copy(message="위치가 크게 변경되어 다음 위치 수신을 기다립니다.") }; return
-            }
-        }
         val match=matchRoute(route,point)
         val off=match.offset>maxOf(20.0,fix.accuracyMetres!!)
         if(off) arrival.reset()

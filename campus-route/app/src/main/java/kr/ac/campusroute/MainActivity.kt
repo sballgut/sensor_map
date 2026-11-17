@@ -34,16 +34,17 @@ class MainActivity : ComponentActivity() {
                 val state by model.state.collectAsStateWithLifecycle()
                 val location = rememberDeviceLocation()
                 LaunchedEffect(location.state) { model.updateLocation(location.state) }
+                val displayLocation=location.copy(state=state.location,headingDegrees=location.headingDegrees.takeIf { state.location.canFollow })
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 BackHandler(state.navigating) { if (state.mapPreview) model.toggleMap() else model.end() }
                 Surface(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        if (state.navigating && !state.mapPreview) NavigationScreen(model, state, location.headingDegrees)
-                        else if(state.navigating) HomeScreen(model,state,location)
+                        if (state.navigating && !state.mapPreview) NavigationScreen(model, state, displayLocation.headingDegrees)
+                        else if(state.navigating) HomeScreen(model,state,displayLocation)
                         else Column(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f).fillMaxWidth()) {
-                                if(tab==0) HomeScreen(model,state,location)
-                                else SharedRoutesScreen(model,state,location)
+                                if(tab==0) HomeScreen(model,state,displayLocation)
+                                else SharedRoutesScreen(model,state,displayLocation)
                             }
                             NavigationBar {
                                 NavigationBarItem(selected=tab==0,onClick={tab=0; model.clearMessage()},icon={Text("⌖")},label={Text("지도")})

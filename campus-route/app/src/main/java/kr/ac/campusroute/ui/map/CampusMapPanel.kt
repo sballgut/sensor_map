@@ -2,6 +2,11 @@ package kr.ac.campusroute.ui.map
 
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -50,24 +55,25 @@ fun CampusMapPanel(
         if (following && location.canFollow && current != null) { center=current; pan=Offset.Zero }
     }
     val transform: (Offset,Float) -> Unit = { move,scale -> following=false; pan+=move; zoom=(zoom*scale).coerceIn(.5f,12f) }
-    Box(modifier.clipToBounds()) {
+    BoxWithConstraints(modifier.clipToBounds()) {
+        val statusLimit=maxHeight*.38f
         if (show3d) CampusOverview(campus,route,current,selectedDestinationId,center,zoom,pan,transform,fix?.accuracyMetres,location.canFollow,headingDegrees)
         else CampusMap(campus,route,current,fix?.accuracyMetres,location.canFollow,selectedDestinationId,center,zoom,pan,transform,onDestinationSelected,headingDegrees)
-        Column(Modifier.align(Alignment.TopEnd).padding(12.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
-            FilledTonalButton(onClick={ show3d=!show3d; pan=Offset.Zero }) { Text(if(show3d) "2D 지도" else "3D 둘러보기") }
-            FilledTonalButton(onClick={ zoom=(zoom*1.3f).coerceAtMost(12f) }) { Text("＋ 확대") }
-            FilledTonalButton(onClick={ zoom=(zoom/1.3f).coerceAtLeast(.5f) }) { Text("－ 축소") }
-            FilledTonalButton(onClick={
+        Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp), horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+            MapControl(if(show3d) "2D" else "3D", "2D/3D 전환") { show3d=!show3d; pan=Offset.Zero }
+            MapControl("＋", "지도 확대") { zoom=(zoom*1.3f).coerceAtMost(12f) }
+            MapControl("−", "지도 축소") { zoom=(zoom/1.3f).coerceAtLeast(.5f) }
+            MapControl("내 위치", "내 위치 또는 위치 설정") {
                 when {
                     location.condition==LocationCondition.PERMISSION_REQUIRED -> if(permissionDenied) onOpenLocationSettings() else onRequestLocation()
                     location.condition==LocationCondition.DISABLED -> onOpenLocationSettings()
-                    current != null -> { center=current; pan=Offset.Zero; following=location.canFollow }
+                    current!=null -> { center=current; pan=Offset.Zero; following=location.canFollow }
                 }
-            },enabled=current!=null || location.condition in listOf(LocationCondition.PERMISSION_REQUIRED,LocationCondition.DISABLED)) { Text(if(current==null) "위치 허용/설정" else "내 위치") }
-            FilledTonalButton(onClick={ center=campus.center; pan=Offset.Zero; zoom=1f; following=false }) { Text("전체 보기") }
+            }
+            MapControl("전체", "캠퍼스 전체 보기") { center=campus.center; pan=Offset.Zero; zoom=1f; following=false }
         }
         Surface(Modifier.align(Alignment.BottomStart).padding(8.dp),color=Color.White.copy(alpha=.94f)) {
-            Column(Modifier.padding(6.dp)) {
+            Column(Modifier.heightIn(max=statusLimit).verticalScroll(rememberScrollState()).padding(6.dp)) {
                 Text(locationMessage(location,permissionDenied),style=MaterialTheme.typography.labelMedium)
                 if (outside) Text("개신캠퍼스 밖 · 주변 지도는 제공하지 않음",style=MaterialTheme.typography.labelSmall)
                 if (location.condition==LocationCondition.PERMISSION_REQUIRED) {
@@ -80,6 +86,13 @@ fun CampusMapPanel(
                 MapAttribution()
             }
         }
+    }
+}
+
+@Composable
+private fun MapControl(label: String, description: String, onClick: () -> Unit) {
+    FilledTonalButton(onClick=onClick,modifier=Modifier.heightIn(min=48.dp).widthIn(min=48.dp).semantics { contentDescription=description },contentPadding=PaddingValues(horizontal=10.dp,vertical=4.dp)) {
+        Text(label,maxLines=1,style=MaterialTheme.typography.labelLarge)
     }
 }
 
