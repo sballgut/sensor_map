@@ -1,0 +1,184 @@
+package com.example.sensorae.ui.d1;
+
+import android.content.Context;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.os.Bundle;
+import android.text.Editable;
+import android.text.TextWatcher;
+import android.view.Gravity;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
+import android.widget.TextView;
+import java.util.List;
+
+/** D-1 owns search and details; D-2 supplies only map content and a selection target. */
+public final class DestinationHomeView extends LinearLayout {
+    private static final int INK = Color.rgb(26, 46, 36), MUTED = Color.rgb(94, 108, 100);
+    private static final int GREEN = Color.rgb(24, 78, 53), PALE = Color.rgb(237, 245, 239);
+    private final DestinationSearchController controller = new DestinationSearchController(DemoDestinations.create());
+    private final FrameLayout mapHost;
+    private final LinearLayout sheet;
+    private final TextView modeLabel, mapLabel;
+    private final EditText search;
+    private boolean restoring;
+
+    public DestinationHomeView(Context context, Runnable openCollection) {
+        super(context);
+        setOrientation(VERTICAL); setBackgroundColor(Color.rgb(247, 249, 247));
+
+        LinearLayout header = row(); header.setPadding(dp(18), dp(12), dp(12), dp(4));
+        LinearLayout heading = column();
+        TextView name = text("충북대 캠퍼스", 23, INK); name.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        heading.addView(name);
+        modeLabel = text("시험 모드 · 목적지 예시", 12, GREEN); heading.addView(modeLabel);
+        header.addView(heading, new LayoutParams(0, -2, 1));
+        Button settings = button("수집·설정", openCollection);
+        settings.setContentDescription("기존 BLE 수집 및 서버 설정 화면 열기");
+        header.addView(settings, new LayoutParams(-2, dp(48))); addView(header);
+
+        LinearLayout searchBox = row();
+        searchBox.setPadding(dp(12), dp(2), dp(4), dp(2)); searchBox.setBackground(background(Color.WHITE, 18));
+        TextView searchIcon = text("⌕", 24, MUTED); searchIcon.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
+        searchBox.addView(searchIcon, new LayoutParams(dp(30), -2));
+        search = new EditText(context); search.setSingleLine(true); search.setTextSize(16); search.setTextColor(INK);
+        search.setHint("어디로 갈까요?"); search.setHintTextColor(MUTED); search.setBackgroundColor(Color.TRANSPARENT);
+        search.setContentDescription("건물 이름 검색"); search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        searchBox.addView(search, new LayoutParams(0, dp(50), 1));
+        Button clear = button("지우기", () -> { search.setText(""); controller.clearSelection(); renderSheet(); });
+        clear.setContentDescription("검색어와 목적지 선택 지우기"); searchBox.addView(clear, new LayoutParams(-2, dp(48)));
+        LayoutParams searchParams = new LayoutParams(-1, -2); searchParams.setMargins(dp(16), dp(10), dp(16), dp(8));
+        addView(searchBox, searchParams);
+
+        TextView location = text("위치·길찾기 연결 전", 12, MUTED); location.setPadding(dp(20), 0, dp(20), dp(8)); addView(location);
+
+        mapHost = new FrameLayout(context);
+        mapHost.setContentDescription("D-2 지도 컴포넌트가 연결될 영역");
+        LinearLayout placeholder = column(); placeholder.setGravity(Gravity.CENTER);
+        placeholder.setPadding(dp(24), dp(12), dp(24), dp(12)); placeholder.setBackgroundColor(Color.rgb(234, 239, 234));
+        TextView mapTitle = text("지도 표시 영역", 20, MUTED); mapTitle.setGravity(Gravity.CENTER); placeholder.addView(mapTitle);
+        mapLabel = text("목적지를 선택해보세요", 15, INK); mapLabel.setGravity(Gravity.CENTER);
+        LayoutParams labelParams = new LayoutParams(-1, -2); labelParams.topMargin = dp(12); placeholder.addView(mapLabel, labelParams);
+        TextView pending = text("지금은 검색·선택 화면을 확인하는 단계예요.", 12, MUTED); pending.setGravity(Gravity.CENTER);
+        LayoutParams pendingParams = new LayoutParams(-1, -2); pendingParams.topMargin = dp(8); placeholder.addView(pending, pendingParams);
+        mapHost.addView(placeholder, new FrameLayout.LayoutParams(-1, -1)); addView(mapHost, new LayoutParams(-1, 0, 1));
+        controller.setTarget(new DestinationSelectionTarget() {
+            public void onDestinationSelected(Destination d) { mapLabel.setText(d.name + " 선택됨\n지도 연결 전"); }
+            public void onSelectionCleared() { mapLabel.setText("목적지를 선택해보세요"); }
+        });
+
+        ScrollView sheetScroll = new ScrollView(context) {
+            @Override protected void onMeasure(int widthSpec, int heightSpec) {
+                int available = DestinationHomeView.this.getHeight();
+                int cap = available > 0 ? Math.round(available * .48f) : dp(280);
+                int parentMode = MeasureSpec.getMode(heightSpec), parentSize = MeasureSpec.getSize(heightSpec);
+                if (parentMode != MeasureSpec.UNSPECIFIED) cap = Math.min(cap, parentSize);
+                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(Math.max(0, cap), MeasureSpec.AT_MOST));
+            }
+        };
+        sheetScroll.setBackground(background(Color.WHITE, 20));
+        sheet = column(); sheet.setPadding(dp(20), dp(14), dp(20), dp(16)); sheetScroll.addView(sheet);
+        addView(sheetScroll, new LayoutParams(-1, -2));
+        search.addTextChangedListener(new TextWatcher() {
+            public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
+            public void onTextChanged(CharSequence value, int start, int before, int count) {
+                if (!restoring) { controller.setQuery(value.toString()); renderSheet(); }
+            }
+            public void afterTextChanged(Editable value) {}
+        });
+        search.setOnEditorActionListener((view, action, event) -> {
+            if (action == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) { hideKeyboard(); return true; }
+            return false;
+        });
+        renderSheet();
+    }
+
+    /** UI thread only. The map must be unattached; attaching replays current selection. */
+    public void attachMap(View map, DestinationSelectionTarget target) {
+        if (map == null || target == null || map.getParent() != null)
+            throw new IllegalArgumentException("An unattached map and target are required");
+        mapHost.removeAllViews(); mapHost.addView(map, new FrameLayout.LayoutParams(-1, -1));
+        controller.setTarget(target);
+    }
+
+    /** C supplies a verified catalog here. A new catalog invalidates a missing selection. */
+    public void setDestinations(List<Destination> values) { controller.setDestinations(values); renderSheet(); }
+
+    /** D-2 calls this when a registered building is tapped on the map. */
+    public boolean selectDestination(String id) {
+        if (!controller.select(id)) return false;
+        hideKeyboard(); search.clearFocus(); renderSheet(); return true;
+    }
+
+    public void saveSelection(Bundle state) {
+        state.putString("d1.query", controller.query());
+        state.putString("d1.selected", controller.selected() == null ? null : controller.selected().id);
+    }
+
+    public void restoreSelection(Bundle state) {
+        if (state == null) return;
+        restoring = true; search.setText(state.getString("d1.query", "")); restoring = false;
+        controller.restore(search.getText().toString(), state.getString("d1.selected")); renderSheet();
+    }
+
+    private void renderSheet() {
+        if (sheet == null) return;
+        boolean demo = false; for (Destination d : controller.destinations()) if (d.isDemo) demo = true;
+        modeLabel.setText(demo ? "시험 모드 · 목적지 예시" : "저장된 목적지 목록");
+        sheet.removeAllViews();
+        Destination selected = controller.selected();
+        if (selected != null) {
+            LinearLayout titleRow = row();
+            TextView title = text(selected.name, 22, INK); title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+            titleRow.addView(title, new LayoutParams(0, -2, 1));
+            titleRow.addView(button("선택 취소", () -> { controller.clearSelection(); renderSheet(); }), new LayoutParams(-2, dp(48)));
+            sheet.addView(titleRow);
+            String meta = selected.category + (selected.isDemo ? " · 시험용 목적지" : "");
+            addSheetText(meta, 13, GREEN, 2);
+            addSheetText(selected.description, 14, MUTED, 10);
+            if (!selected.hasCoordinates()) addSheetText("실제 지도 좌표는 아직 연결되지 않았어요.", 13, MUTED, 8);
+            Button route = button("경로 기능 준비 중", () -> {}); route.setEnabled(false);
+            route.setBackground(background(PALE, 12)); route.setTextColor(MUTED);
+            LayoutParams routeParams = new LayoutParams(-1, dp(52)); routeParams.topMargin = dp(14); sheet.addView(route, routeParams);
+            return;
+        }
+        List<Destination> results = controller.results();
+        String heading = controller.query().trim().isEmpty() ? "목적지 선택" : "검색 결과 " + results.size() + "개";
+        TextView title = text(heading, 20, INK); title.setTypeface(Typeface.DEFAULT, Typeface.BOLD); sheet.addView(title);
+        if (results.isEmpty()) {
+            addSheetText("검색 결과가 없어요. 다른 건물 이름을 입력해보세요.", 14, MUTED, 14);
+            return;
+        }
+        for (Destination d : results) {
+            Button item = button(d.name + "   ›", () -> selectDestination(d.id));
+            item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); item.setTextSize(16);
+            item.setPadding(dp(14), 0, dp(14), 0); item.setBackground(background(Color.rgb(246, 248, 246), 10));
+            item.setContentDescription(d.name + " 목적지 선택" + (d.isDemo ? ", 시험 자료" : ""));
+            LayoutParams itemParams = new LayoutParams(-1, dp(54)); itemParams.topMargin = dp(8); sheet.addView(item, itemParams);
+        }
+    }
+
+    private void addSheetText(String value, int size, int color, int top) {
+        TextView view = text(value, size, color); LayoutParams p = new LayoutParams(-1, -2); p.topMargin = dp(top); sheet.addView(view, p);
+    }
+    private void hideKeyboard() {
+        InputMethodManager keyboard = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (keyboard != null) keyboard.hideSoftInputFromWindow(search.getWindowToken(), 0);
+    }
+    private LinearLayout row() { LinearLayout view = new LinearLayout(getContext()); view.setGravity(Gravity.CENTER_VERTICAL); return view; }
+    private LinearLayout column() { LinearLayout view = new LinearLayout(getContext()); view.setOrientation(VERTICAL); return view; }
+    private TextView text(String value, int size, int color) { TextView view = new TextView(getContext()); view.setText(value); view.setTextSize(size); view.setTextColor(color); return view; }
+    private Button button(String value, Runnable action) {
+        Button view = new Button(getContext()); view.setText(value); view.setTextColor(GREEN); view.setAllCaps(false);
+        view.setOnClickListener(v -> action.run()); return view;
+    }
+    private GradientDrawable background(int color, int radius) { GradientDrawable shape = new GradientDrawable(); shape.setColor(color); shape.setCornerRadius(dp(radius)); return shape; }
+    private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
+}
