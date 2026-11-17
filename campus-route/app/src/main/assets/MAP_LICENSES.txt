@@ -1,0 +1,17 @@
+Campus Route map data: Chungbuk National University, Gaesin campus.
+© OpenStreetMap contributors — Open Database License (ODbL) 1.0.
+https://www.openstreetmap.org/copyright
+https://opendatacommons.org/licenses/odbl/1-0/
+
+Sources:
+OSM API extract downloaded 2026-11-17; campus relation 6705106.
+https://api.openstreetmap.org/api/0.6/map?bbox=127.446,36.619,127.463,36.635
+OSM building outlines curated by Hong-Iron / SMASH-CBNU:
+https://github.com/Hong-Iron/SMASH-CBNU/blob/main/data/campus.json
+https://github.com/Hong-Iron/SMASH-CBNU/blob/main/LICENSE
+
+The derived database is the bundled gaesin_campus.json, distributed under ODbL 1.0.
+Changes: campus-boundary filtering, metre projection, OSM-node route graph,
+OSM building-outline conversion, estimated heights, nearby-route destinations.
+No game code, textures, images, terrain, or VWorld-added buildings were copied.
+All routes and entrances require field verification. Position playback is simulated.
