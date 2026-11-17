@@ -1,0 +1,164 @@
+{
+  "version": "synthetic-v1",
+  "name": "가상 샘플 · 실제 개신캠퍼스 지도 아님",
+  "nodes": [
+    {
+      "id": "gate",
+      "x": 0,
+      "y": 0,
+      "name": "샘플 정문"
+    },
+    {
+      "id": "plaza",
+      "x": 0,
+      "y": 45,
+      "name": "중앙 광장"
+    },
+    {
+      "id": "library",
+      "x": 0,
+      "y": 110,
+      "name": "샘플 도서관"
+    },
+    {
+      "id": "west",
+      "x": -65,
+      "y": 45,
+      "name": "서쪽 정원"
+    },
+    {
+      "id": "arts",
+      "x": -65,
+      "y": 110,
+      "name": "샘플 인문관"
+    },
+    {
+      "id": "east",
+      "x": 70,
+      "y": 45,
+      "name": "동쪽 쉼터"
+    },
+    {
+      "id": "science",
+      "x": 70,
+      "y": 110,
+      "name": "샘플 공학관"
+    },
+    {
+      "id": "north",
+      "x": 0,
+      "y": 180,
+      "name": "샘플 학생회관"
+    },
+    {
+      "id": "gym",
+      "x": 70,
+      "y": 180,
+      "name": "샘플 체육관"
+    }
+  ],
+  "edges": [
+    {
+      "to": "plaza",
+      "from": "gate"
+    },
+    {
+      "to": "library",
+      "from": "plaza"
+    },
+    {
+      "to": "west",
+      "from": "plaza"
+    },
+    {
+      "to": "arts",
+      "from": "west"
+    },
+    {
+      "to": "library",
+      "from": "arts"
+    },
+    {
+      "to": "east",
+      "from": "plaza"
+    },
+    {
+      "to": "science",
+      "from": "east"
+    },
+    {
+      "to": "library",
+      "from": "science"
+    },
+    {
+      "to": "north",
+      "from": "library"
+    },
+    {
+      "to": "gym",
+      "from": "science"
+    },
+    {
+      "to": "gym",
+      "from": "north"
+    }
+  ],
+  "buildings": [
+    {
+      "name": "인문관",
+      "x": -90,
+      "y": 112,
+      "width": 30,
+      "depth": 40,
+      "height": 14
+    },
+    {
+      "name": "도서관",
+      "x": -25,
+      "y": 139,
+      "width": 32,
+      "depth": 32,
+      "height": 18
+    },
+    {
+      "name": "공학관",
+      "x": 100,
+      "y": 112,
+      "width": 38,
+      "depth": 40,
+      "height": 24
+    },
+    {
+      "name": "학생회관",
+      "x": -23,
+      "y": 198,
+      "width": 32,
+      "depth": 22,
+      "height": 12
+    },
+    {
+      "name": "체육관",
+      "x": 98,
+      "y": 181,
+      "width": 35,
+      "depth": 38,
+      "height": 13
+    },
+    {
+      "name": "강의동",
+      "x": 36,
+      "y": 78,
+      "width": 36,
+      "depth": 35,
+      "height": 17
+    },
+    {
+      "name": "학생 정원",
+      "x": -33,
+      "y": 78,
+      "width": 26,
+      "depth": 28,
+      "height": 2
+    }
+  ]
+}
