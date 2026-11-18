@@ -146,12 +146,16 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         Matrix.setIdentityM(model,0)
         Matrix.translateM(model,0,ax,.27f,az)
         Matrix.rotateM(model,0,rotation,0f,1f,0f)
+        Matrix.scaleM(model,0,1f,1f,1.4f)
         if(userHeadingKnown) draw(arrow,9,markerColor)
-        val body=if(userMarkerReliable) floatArrayOf(.12f,.19f,.29f,1f) else floatArrayOf(.40f,.42f,.45f,1f)
-        val head=if(userMarkerReliable) floatArrayOf(.21f,.29f,.39f,1f) else floatArrayOf(.48f,.50f,.52f,1f)
+        val body=if(userMarkerReliable) floatArrayOf(.96f,.97f,.98f,1f) else floatArrayOf(.40f,.42f,.45f,1f)
+        val head=if(userMarkerReliable) floatArrayOf(1f,1f,1f,1f) else floatArrayOf(.48f,.50f,.52f,1f)
         fun part(dx: Float,y: Float,dz: Float,rx: Float,ry: Float,rz: Float,color: FloatArray, tilt: Float = 0f) {
-            Matrix.setIdentityM(model,0); Matrix.translateM(model,0,ax,0f,az)
-            Matrix.rotateM(model,0,rotation,0f,1f,0f); Matrix.translateM(model,0,dx,y,dz)
+            Matrix.setIdentityM(model,0); Matrix.translateM(model,0,ax,.20f,az)
+            Matrix.rotateM(model,0,rotation,0f,1f,0f)
+            // Enlarge about the feet, keeping the accepted ground position unchanged.
+            Matrix.scaleM(model,0,1.4f,1.4f,1.4f)
+            Matrix.translateM(model,0,dx,y-.20f,dz)
             Matrix.rotateM(model,0,tilt,0f,0f,1f)
             Matrix.scaleM(model,0,rx,ry,rz)
             draw(avatarSphere,avatarSphere.capacity()/4,color)
@@ -175,7 +179,7 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         val data=mutableListOf<Float>()
         fun vertex(latitude: Double,longitude: Double) {
             val x=cos(latitude)*cos(longitude); val y=sin(latitude); val z=cos(latitude)*sin(longitude)
-            val shade=(.70+.30*max(0.0,-.4*x+.7*y+.5*z)).toFloat()
+            val shade=(.55+.45*max(0.0,-.4*x+.7*y+.5*z)).toFloat()
             data.addAll(listOf(x.toFloat(),y.toFloat(),z.toFloat(),shade))
         }
         for(i in 0 until 16) for(j in 0 until 32) {
