@@ -1,0 +1,24 @@
+[Unit]
+Description=SensorAE project API server
+After=network.target
+
+[Service]
+Type=simple
+User=team04
+Group=team04
+WorkingDirectory=/opt/sensorae-server
+EnvironmentFile=/etc/sensorae-server.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 -u /opt/sensorae-server/api.py --host ${SENSORAE_HOST} --port 8080 --data /var/lib/sensorae-server
+Restart=on-failure
+RestartSec=5
+StateDirectory=sensorae-server
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+
+[Install]
+WantedBy=multi-user.target

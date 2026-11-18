@@ -11,3 +11,6 @@ server/data/
 *.keystore
 *.jks
 history_*/
+.env
+.env.*
+sensorae-server.env
