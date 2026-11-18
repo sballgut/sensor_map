@@ -19,9 +19,9 @@ import kotlin.math.max
 
 /** Real GL overview with an elevated perspective camera. Destination selection remains in the list. */
 @Composable
-fun CampusOverview(campus: Campus, route: Route?, current: Point, selected: String, center: Point, zoom: Float, pan: Offset, onTransform: (Offset, Float) -> Unit) {
+fun CampusOverview(campus: Campus, route: Route?, current: Point?, selected: String?, center: Point, zoom: Float, pan: Offset, onTransform: (Offset, Float) -> Unit, accuracy: Double? = null, reliable: Boolean = true, headingDegrees: Double? = null) {
     val context = LocalContext.current
-    val destination = campus.byId.getValue(campus.destinations.first { it.id == selected }.nodeId)
+    val destination = campus.byId.getValue(campus.destinations.firstOrNull { it.id == selected }?.nodeId ?: campus.startNodeId)
     val displayRoute = remember(route, destination) { route ?: Route(listOf(destination), 0.0) }
     val renderer = remember(campus, displayRoute) { CampusRenderer(campus, displayRoute) }
     val surface = remember(renderer, context) {
@@ -29,7 +29,12 @@ fun CampusOverview(campus: Campus, route: Route?, current: Point, selected: Stri
             setEGLContextClientVersion(2); setEGLConfigChooser(8, 8, 8, 8, 24, 0)
             preserveEGLContextOnPause = true
             renderer.overview = OverviewCamera(center, zoom)
-            renderer.target = routePose(displayRoute, 0.0).copy(position = current)
+            renderer.showDestination = selected != null
+            renderer.showUserMarker = current != null
+            renderer.userMarkerReliable = reliable
+            renderer.userHeadingKnown = reliable && headingDegrees != null
+            renderer.userAccuracyMetres = accuracy
+            renderer.target = routePose(displayRoute, 0.0).copy(position = current ?: destination.position,heading=headingDegrees?.let { Math.toRadians(it) } ?: 0.0)
             setRenderer(renderer)
         }
     }
@@ -54,6 +59,11 @@ fun CampusOverview(campus: Campus, route: Route?, current: Point, selected: Stri
             val height = view.height.coerceAtLeast(1).toFloat()
             val metresPerPixel = max(campus.mapHeight, campus.mapWidth * height / width) * 1.05 / (zoom * height)
             renderer.overview = OverviewCamera(Point(center.x - pan.x * metresPerPixel, center.y + pan.y * metresPerPixel / .78), zoom)
-            renderer.target = routePose(displayRoute, 0.0).copy(position = current)
+            renderer.showDestination = selected != null
+            renderer.showUserMarker = current != null
+            renderer.userMarkerReliable = reliable
+            renderer.userHeadingKnown = reliable && headingDegrees != null
+            renderer.userAccuracyMetres = accuracy
+            renderer.target = routePose(displayRoute, 0.0).copy(position = current ?: destination.position,heading=headingDegrees?.let { Math.toRadians(it) } ?: 0.0)
         })
 }

@@ -25,13 +25,13 @@ class AssetCampusRepository(private val assets: AssetManager) : CampusRepository
         val buildingsJson = json.getJSONArray("buildings")
         val buildings = (0 until buildingsJson.length()).map { i ->
             val b = buildingsJson.getJSONObject(i)
-            Building(b.getString("name"), Point(b.getDouble("x"), b.getDouble("y")), b.getDouble("width"), b.getDouble("depth"), b.getDouble("height"), points(b.getJSONArray("footprint")))
+            Building(b.getString("name"), Point(b.getDouble("x"), b.getDouble("y")), b.getDouble("width"), b.getDouble("depth"), b.getDouble("height"), points(b.getJSONArray("footprint")), b.getString("id"))
         }
         val destinationsJson = json.getJSONArray("destinations")
         val destinations = (0 until destinationsJson.length()).map {
             val d = destinationsJson.getJSONObject(it)
             Destination(d.getString("id"), d.getString("name"), d.getString("nodeId"))
         }
-        return Campus(json.getString("version"), json.getString("name"), nodes, edges, buildings, points(json.getJSONArray("boundary")), json.getString("startNodeId"), destinations)
+        return Campus(json.getString("version"), json.getString("name"), nodes, edges, buildings, points(json.getJSONArray("boundary")), json.getString("startNodeId"), destinations, json.getJSONObject("origin").getDouble("latitude"), json.getJSONObject("origin").getDouble("longitude"))
     }
 }

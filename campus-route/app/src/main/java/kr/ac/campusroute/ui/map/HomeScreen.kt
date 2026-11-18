@@ -1,148 +1,89 @@
 package kr.ac.campusroute.ui.map
 
-import android.graphics.Paint
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
-import androidx.compose.ui.platform.LocalUriHandler
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import android.os.Bundle
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.Alignment
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.ComposeView
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
-import kr.ac.campusroute.domain.model.*
-import kr.ac.campusroute.routing.routePose
+import androidx.compose.ui.viewinterop.AndroidView
+import com.example.sensorae.ui.d1.DestinationHomeView
+import com.example.sensorae.ui.d1.DestinationSelectionTarget
+import com.example.sensorae.ui.d1.Destination as D1Destination
 import kr.ac.campusroute.ui.*
-import kotlin.math.*
 
+/** D-1's Java search/detail UI with D-2 Compose/OpenGL map attached through its public contract. */
 @Composable
-fun HomeScreen(model: CampusViewModel, state: CampusState) {
-    var show3d by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
-    var zoom by remember { mutableFloatStateOf(1f) }
-    var pan by remember { mutableStateOf(Offset.Zero) }
-    val current = state.route?.let { routePose(it, state.travelled).position } ?: model.campus.byId.getValue(model.campus.startNodeId).position
-    var center by remember { mutableStateOf(model.campus.center) }
-    Column(Modifier.fillMaxSize()) {
-        Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
-            Text("CAMPUS ROUTE · 충북대 개신캠퍼스", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Text("어디로 걸어갈까요?", style = MaterialTheme.typography.headlineMedium)
-            Text("OSM 실좌표 지도 · 출입구/통행 현장 확인 전", style = MaterialTheme.typography.bodySmall)
-            Spacer(Modifier.height(8.dp))
-            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("개신캠퍼스 건물 검색") }, singleLine = true)
-            Text("데모 위치  •  GPS / BLE 미연결", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.labelMedium, color = Color(0xFF707070))
-        }
-        Box(Modifier.weight(1f).fillMaxWidth().clipToBounds()) {
-            if (show3d) CampusOverview(model.campus, state.route, current, state.destination, center, zoom, pan,
-                onTransform = { move, scale -> pan += move; zoom = (zoom * scale).coerceIn(0.5f, 12f) })
-            else CampusMap(model.campus, state.route, current, state.destination, center, zoom, pan,
-                onTransform = { move, scale -> pan += move; zoom = (zoom * scale).coerceIn(0.5f, 12f) },
-                onSelect = { if (!state.navigating) model.select(it) })
-            Column(Modifier.align(Alignment.TopEnd).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FilledTonalButton(onClick = { show3d = !show3d; pan = Offset.Zero }) { Text(if (show3d) "2D 지도" else "3D 둘러보기") }
-                FilledTonalButton(onClick = { zoom = (zoom * 1.3f).coerceAtMost(12f) }) { Text("＋ 확대") }
-                FilledTonalButton(onClick = { zoom = (zoom / 1.3f).coerceAtLeast(0.5f) }) { Text("－ 축소") }
-                FilledTonalButton(onClick = { center = current; pan = Offset.Zero }) { Text("내 위치") }
-                FilledTonalButton(onClick = { center = model.campus.center; pan = Offset.Zero; zoom = 1f }) { Text("전체 보기") }
-            }
-            Column(Modifier.align(Alignment.BottomStart).padding(8.dp)) {
-                Text("N ↑ · 개신캠퍼스 · 오프라인", style = MaterialTheme.typography.labelSmall)
-                MapAttribution()
+fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocationBinding) {
+    if(state.navigating) {
+        Column(Modifier.fillMaxSize()) {
+            CampusMapPanel(model.campus,state.route,state.destination,location.state,Modifier.weight(1f).fillMaxWidth(),
+                onDestinationSelected={},onRequestLocation=location.requestPermission,onOpenLocationSettings=location.openSettings,
+                permissionDenied=location.denied,headingDegrees=location.headingDegrees)
+            Text(state.message ?: "실제 위치로 안내 중",Modifier.padding(12.dp))
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceEvenly) {
+                Button(onClick=model::toggleMap) { Text("3D 안내") }
+                TextButton(onClick=model::end) { Text("안내 종료") }
             }
         }
-        Surface(shadowElevation = 8.dp) {
-            Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                if (state.navigating) {
-                    Text("데모 경로 진행 중", style = MaterialTheme.typography.titleMedium)
-                    Button(onClick = model::toggleMap, modifier = Modifier.fillMaxWidth()) { Text("3D 안내로 돌아가기") }
-                    TextButton(onClick = model::end) { Text("안내 종료") }
-                } else {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(model.campus.destinations.filter { it.name.contains(query, ignoreCase = true) }) { node ->
-                            FilterChip(selected = state.destination == node.id, onClick = { model.select(node.id) }, label = { Text(node.name) })
+        return
+    }
+    val latest by rememberUpdatedState(state)
+    val binding by rememberUpdatedState(location)
+    val saved = rememberSaveable { Bundle() }
+    var info by remember { mutableStateOf(false) }
+    val theme=MaterialTheme.colorScheme
+    val catalog=remember(model.campus) { model.campus.destinations.map { d ->
+        val n=model.campus.byId.getValue(d.nodeId)
+        D1Destination(d.id,d.name,"건물 인근 보행로","OSM 지도 기반 목적지입니다. 실제 건물 출입구와 통행 가능 여부를 현장에서 확인하세요.",n.latitude,n.longitude,false,listOf(d.name.substringBefore(" ·")))
+    } }
+    Column(Modifier.fillMaxSize().imePadding()) {
+        state.indoorBuildingId?.let { id ->
+            val building=model.campus.buildings.first { it.id==id }
+            Surface(color=MaterialTheme.colorScheme.surfaceVariant) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("${building.name} 안에서 출발",style=MaterialTheme.typography.titleSmall)
+                    Text("아는 출구로 밖에 나온 뒤 위치를 확인해 주세요. 실내 이동 경로는 표시하지 않습니다.",style=MaterialTheme.typography.bodySmall)
+                    Row {
+                        TextButton(onClick=model::start,enabled=!state.planning) { Text("밖에 나왔어요 · 경로 찾기") }
+                        TextButton(onClick=model::cancelIndoorDeparture) { Text("취소") }
+                    }
+                }
+            }
+        }
+        AndroidView(modifier=Modifier.weight(1f).fillMaxWidth(), factory={ context ->
+            DestinationHomeView(context) { info=true }.apply host@ {
+                setDestinations(catalog)
+                restoreSelection(saved)
+                state.destination?.let { selectDestination(it) }
+                setRouteAction { model.requestStart() }
+                val map=ComposeView(context).apply {
+                    setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
+                    setContent {
+                        MaterialTheme(colorScheme=theme) {
+                            CampusMapPanel(model.campus,latest.route,latest.destination,binding.state,Modifier.fillMaxSize(),
+                                onDestinationSelected={ id -> if(!latest.navigating) this@host.selectDestination(id) },
+                                onRequestLocation=binding.requestPermission,onOpenLocationSettings=binding.openSettings,permissionDenied=binding.denied,headingDegrees=binding.headingDegrees)
                         }
                     }
-                    if (model.campus.destinations.none { it.name.contains(query, ignoreCase = true) }) Text("검색 결과가 없습니다.")
-                    Text("출발: 정문 인근 → ${model.campus.destinations.first { it.id == state.destination }.name}", style = MaterialTheme.typography.bodyMedium)
-                    state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-                    Button(onClick = model::start, modifier = Modifier.fillMaxWidth().height(52.dp)) { Text("경로 찾기 · 이동 시뮬레이션") }
                 }
+                attachMap(map,object: DestinationSelectionTarget {
+                    override fun onDestinationSelected(destination: D1Destination) { model.select(destination.id); saveSelection(saved) }
+                    override fun onSelectionCleared() { model.select(null); saveSelection(saved) }
+                })
             }
+        }, update={ view ->
+            view.setLocationStatus(state.message ?: locationMessage(location.state,location.denied))
+            view.setRouteStatus(if(state.planning) "경로 계산 중…" else if(state.navigating) "안내 진행 중" else "현재 위치에서 길찾기",!state.planning && !state.navigating)
+            view.saveSelection(saved)
+        })
+        if(state.navigating) Row(Modifier.fillMaxWidth().padding(8.dp),horizontalArrangement=Arrangement.SpaceEvenly) {
+            Button(onClick=model::toggleMap) { Text("3D 안내") }
+            TextButton(onClick=model::end) { Text("안내 종료") }
         }
     }
-}
-
-@Composable
-private fun CampusMap(campus: Campus, route: Route?, current: Point, selected: String, center: Point, zoom: Float, pan: Offset, onTransform: (Offset, Float) -> Unit, onSelect: (String) -> Unit) {
-    Canvas(Modifier.fillMaxSize().clipToBounds()
-        .pointerInput(Unit) { detectTransformGestures { _, move, scale, _ -> onTransform(move, scale) } }
-        .pointerInput(zoom, pan, center, campus) {
-            detectTapGestures { tap ->
-                val scale = min(size.width / campus.mapWidth, size.height / campus.mapHeight) * zoom
-                fun point(p: Point) = Offset(size.width / 2f + (p.x - center.x).toFloat() * scale, size.height / 2f - (p.y - center.y).toFloat() * scale) + pan
-                campus.destinations.minByOrNull { (point(campus.byId.getValue(it.nodeId).position) - tap).getDistance() }?.takeIf { (point(campus.byId.getValue(it.nodeId).position) - tap).getDistance() < 28.dp.toPx() }?.let { onSelect(it.id) }
-            }
-        }) {
-        drawRect(Color(0xFFF5F5F5))
-        val scale = min(size.width / campus.mapWidth, size.height / campus.mapHeight) * zoom
-        fun point(p: Point) = Offset(size.width / 2 + (p.x - center.x).toFloat() * scale, size.height / 2 - (p.y - center.y).toFloat() * scale) + pan
-        if (campus.boundary.isNotEmpty()) {
-            val boundaryPath = Path().apply {
-                campus.boundary.forEachIndexed { index, p -> val q = point(p); if (index == 0) moveTo(q.x, q.y) else lineTo(q.x, q.y) }; close()
-            }
-            drawPath(boundaryPath, Color(0xFFEEEEEE))
-            drawPath(boundaryPath, Color(0xFFC6C6C6), style = Stroke(1.5.dp.toPx()))
-        }
-        // Complete each layer before the next so adjoining segments have no scalloped borders.
-        for ((color, width) in listOf(Color(0xFFDADADA) to 9f, Color.White to 7f)) {
-            for (edge in campus.edges.filter { it.accessible }) {
-                val a = point(campus.byId.getValue(edge.from).position)
-                val b = point(campus.byId.getValue(edge.to).position)
-                drawLine(color, a, b, width * scale, StrokeCap.Round)
-            }
-        }
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.rgb(80, 80, 80); textSize = 11.dp.toPx(); textAlign = Paint.Align.CENTER }
-        campus.buildings.forEach { b ->
-            val c = point(b.center); val dim = Size(b.width.toFloat() * scale, b.depth.toFloat() * scale)
-            if (b.footprint.isNotEmpty()) {
-                val outline = Path().apply { b.footprint.forEachIndexed { i, p -> val q = point(p); if (i == 0) moveTo(q.x, q.y) else lineTo(q.x, q.y) }; close() }
-                // A small neutral shadow separates white footprints from the pale ground.
-                val shadowOffset = 1.5.dp.toPx()
-                withTransform({ translate(shadowOffset, shadowOffset) }) {
-                    drawPath(outline, Color(0x1A000000))
-                }
-                drawPath(outline, Color(0xFFFAFAFA))
-                drawPath(outline, Color(0xFFD0D0D0), style = Stroke(1f))
-            } else drawRect(Color(0xFFF8F8F8), c - Offset(dim.width / 2, dim.height / 2), dim)
-            if (zoom >= 2.5f && b.name.isNotBlank()) drawContext.canvas.nativeCanvas.drawText(b.name, c.x, c.y + 4.dp.toPx(), paint)
-        }
-        route?.nodes?.zipWithNext()?.forEach { (a, b) -> drawLine(Color(0xFF2166F3), point(a.position), point(b.position), 4.dp.toPx(), StrokeCap.Round) }
-        campus.destinations.forEach { drawCircle(Color(0xFF999999), 2.dp.toPx(), point(campus.byId.getValue(it.nodeId).position)) }
-        val destination = point(campus.byId.getValue(campus.destinations.first { it.id == selected }.nodeId).position)
-        drawCircle(Color(0xFF303030), 11.dp.toPx(), destination)
-        drawCircle(Color.White, 4.dp.toPx(), destination)
-        val marker = point(current)
-        drawCircle(Color(0x332166F3), 17.dp.toPx(), marker)
-        drawCircle(Color(0xFF2166F3), 8.dp.toPx(), marker)
-        drawCircle(Color.White, 9.dp.toPx(), marker, style = Stroke(2.dp.toPx()))
-    }
-}
-
-@Composable
-fun MapAttribution() {
-    val uri = LocalUriHandler.current
-    Surface(color = Color.White.copy(alpha = 0.92f)) {
-        Text("© OpenStreetMap contributors · ODbL", Modifier.clickable { uri.openUri("https://www.openstreetmap.org/copyright") }.padding(4.dp), style = MaterialTheme.typography.labelSmall)
-    }
+    if(info) AlertDialog(onDismissRequest={info=false},title={Text("개신캠퍼스 길찾기")},text={Text("위치 권한을 허용한 뒤 캠퍼스 안에서 목적지를 선택하세요. 위치는 화면 사용 중에만 수신하며 저장·전송하지 않습니다.\n\n경로는 OSM 보행로 기준이며 현장 확인 전입니다. 건물 출입구가 아닌 인근 보행로까지 안내합니다. A/B BLE 융합과 기록·서버 전송은 아직 연결되지 않았습니다.")},confirmButton={TextButton(onClick={info=false}) { Text("확인") }})
 }

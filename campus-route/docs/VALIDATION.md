@@ -1,5 +1,68 @@
 # 검증 기록
 
+## 2026-11-18 둥근 손 · 사람 비율 · 높은 시점
+
+- 머리/목/몸통/골반/다리/발을 이어진 사람 비율로 조정하고 팔 끝에 둥근 손을 추가했다. 남색과 실제 위치 동기화는 유지한다.
+- 안내 카메라 높이 15→19m, 전방 주시 거리 13→11m로 조정했다.
+- testDebugUnitTest / assembleDebug / lintDebug 성공, 기존 79개 테스트 통과.
+- API 37 에뮬레이터에서 실외 경로 시작 후 사람 모형, 둥근 손, 높아진 시점을 시각 확인했다. screenshots/avatar-round-hands-raised-camera.png. 실제 단말 GPU 확인은 별도다.
+
+
+## 2026-11-18 실내 출발 · 정보 블록 정리 · 둥근 아바타
+
+- 실외/실내 출발 선택, 현재 건물 검색/선택, 출구 밖 새 위치 확인 뒤 경로 계산을 연결했다. 건물 외곽 내부에서 임의 보행로로 붙이는 출발을 거부한다. 실내 경로/검증 출입구 자동 안내는 미구현이다.
+- 지도 하단 상태 문구 블록을 제거하고 필수 권한/서비스 버튼과 출처 표기를 유지했다.
+- OpenGL 둥근 남색 사람과 발밑 앵커에 연결된 방향 화살표로 변경했다. 위치 동기화 정책은 유지한다.
+- 최종 testDebugUnitTest / assembleDebug / lintDebug 성공. JVM 79개 통과(건물 외곽/실외 확인 7개 추가), 실패/오류 0개.
+- API 37 에뮬레이터에서 목적지 선택→실내 선택→NH관 선택→실외 확인 후 123학군단 인근 경로 시작, 최종 APK의 실외 출발과 아바타 화면을 확인했다. 좌표는 시험 주입값이며 실제 건물에서 걸어나온 실측이 아니다.
+- screenshots/indoor-departure.png, screenshots/rounded-avatar.png. 실제 출입구·실내 측위·Galaxy S26+ 현장 검증은 별도다.
+
+
+## 실제 위치 동기화 · Galaxy S26+ 대응
+
+- LiveLocationGate로 지도/3D/진행 입력을 통일하고 3D 좌표의 독립 보간 지연을 제거했다. 새 측위 없이 진행하지 않는다.
+- JVM 72개 통과(동기화 게이트 8개 추가), assembleDebug/lintDebug 성공.
+- 1440×3120 / 시험 밀도 560dpi / 글자 100%, 130%에서 홈·상세·3D 안내 버튼과 영역을 확인했다. 스크린샷: s26plus-home-large.png, s26plus-navigation-large.png.
+- 에뮬레이터 위치 서비스 중단 및 약 900m 좌표 점프에서 수신 대기로 바뀌고 남은 거리 602m를 유지함을 확인했다. 원래 좌표/화면 설정을 복원하고 이번에 시작한 시험 에뮬레이터를 종료했다.
+- 실제 Galaxy S26+는 연결되어 있지 않았다. One UI·실외 GPS 보행 및 센서 지연은 현장 확인 전이다.
+
+
+## 받은 공유 경로 탭
+
+- 하단 탭, 빈 목록, 파일 선택기 JSON 가져오기, 목록/상세 지도, 공유 경로 안내, 삭제 확인을 추가했다.
+- assembleDebug / testDebugUnitTest / lintDebug 성공. JVM 64개 통과(공유 경로 검증 8개 추가), 실패/오류 0개.
+- API 37 에뮬레이터에서 시험 JSON을 시스템 파일 선택기로 가져오기, 상세 표시, 시작점 근처에서 공유받은 경로 안내 시작, 앱 재설치/재시작 후 목록 유지, 삭제 후 빈 목록을 확인했다. 시험 자료는 검증 후 삭제했다. AndroidRuntime 오류 없음.
+- screenshots/shared-routes-list.png 및 shared-route-detail.png는 실제 타인 기록이 아닌 시험 자료 화면이다. 실제 서버·링크 수신 및 현장 보행 검증은 아니다.
+
+
+## 공유 경로 색상 변경
+
+- RouteOrigin.SHARED는 2D/3D에서 초록색, LOCAL은 파란색으로 표시한다. 공유 수신 기능 자체는 미연결이다.
+- assembleDebug / testDebugUnitTest / lintDebug 성공. 기존 56개 테스트 통과. 공유 수신 화면의 기기 검증은 수행하지 않았다.
+
+## 2026-11-17 D-1/D-2 실제 위치 안내 통합
+
+- d1-ui 0590c14의 Java 검색/상세창을 가져와 D-2 Compose/OpenGL 지도와 연결했다. 원본 검색 테스트 12개 유지.
+- assembleDebug / testDebugUnitTest / lintDebug --offline 성공. JVM 56개 통과: 기존 34개 + D-1 12개 + 실제 위치 경로/도착 10개. 실패/오류 0개. Lint 오류 0개, 경고 8개(버전 알림 6, 가져온 Java View의 생성자/문자열 경고 2).
+- API 37 에뮬레이터에서 검색 목록→123학군단 선택→현재 위치 출발 3D 안내 확인. 약 601m 경로에 46개 시험 위치를 순서대로 주입해 남은 거리/회전 안내 갱신과 목적지 인근 도착 메시지를 확인했다. 이 시험은 실제 현장 GPS 측정이 아니다.
+- 최종 APK 재설치 후 동일 출발 위치로 3D 안내 재실행, 위치 서비스 끄기→정확한 위치 수신 대기, 다시 켜기, 2D 지도 전환을 확인했다. 설정은 복원했다. AndroidRuntime 오류 로그 없음.
+- 화면: screenshots/d1-d2-home.png, screenshots/d1-d2-route-map.png.
+- 실제 단말 방향 센서 정확도·GPS 보행 품질·전체 접근성/작은 화면·프로세스 복원은 추가 검증이 필요하다. A/B BLE 융합·기록 공유·서버 연동 완료를 의미하지 않는다.
+
+
+
+## 2026-11-17 D-2 현재 위치 표시
+
+- CampusMapPanel에 위치 상태를 입력받도록 분리하고, 독립 앱에 포그라운드 위치 권한/Android LocationManager 어댑터를 연결했다. 기존 A/E 앱과 TeamBridge는 변경하지 않았다.
+- 최종 assembleDebug, testDebugUnitTest, lintDebug --offline 성공. JVM 34개 통과(위치 상태/좌표 변환 10개 추가), 실패 0개. Lint 오류 0개·경고 6개.
+- API 37 에뮬레이터에서 권한 전 현재 위치 없음, Android 위치 권한 승인, 주입한 개신캠퍼스 좌표 수신 후 점/정확도 반경 표시를 확인했다. 이는 에뮬레이터 시험 좌표이며 실제 휴대폰 GPS 현장 검증이 아니다.
+- 오래된 last-known 위치에 신호 공백 표시, 위치 서비스 끄기에 실시간 위치 아님 안내를 확인했다. 검증 후 위치 서비스를 다시 켜고 최종 APK를 설치했다.
+- 최신 화면: `screenshots/d2-location.png`. 위치는 메모리에서만 사용하고 저장/전송하지 않는다.
+- 실제 단말의 GPS 품질, 대략적 권한/영구 거부 전체 시나리오, 백그라운드 복귀 및 D-1/A/B 통합은 추가 검증이 필요하다. 길찾기 이동은 기존 시뮬레이션이다.
+
+아래는 이전 변경의 검증 기록이다.
+
+
 ## 최신 수정: 확대 클리핑·3D 둘러보기 (2026-11-17)
 
 - 지도 컨테이너와 Canvas에 clipToBounds를 적용했다. 최대 확대에서도 검색창/하단 패널 침범이 없음을 Pixel 10 API 37 에뮬레이터에서 캡처로 확인했다.
@@ -79,3 +142,10 @@ README의 수동 검증 절차로 실제 기기에서 확인해야 한다.
 - 검증 문서: `docs/VALIDATION.md`
 
 Kotlin 파일의 기준 디렉터리는 `app/src/main/java/kr/ac/campusroute/`이며 리소스는 `app/src/main/` 아래에 있다.
+
+## 2026-11-18 지도 정보 접기·펼치기
+- 기본 펼침, 버튼으로 펼침/접힘, rememberSaveable로 화면 재생성 시 상태 보존.
+- 출처 표시와 링크도 함께 접기·펼치기. 위치 상태·권한 버튼은 펼쳤을 때 표시.
+- testDebugUnitTest: 72 tests, 0 failures, 0 errors. assembleDebug 및 lintDebug 성공.
+- 실기기 터치·화면 회전·2D/3D 전환 시 표시 확인은 미수행.
+

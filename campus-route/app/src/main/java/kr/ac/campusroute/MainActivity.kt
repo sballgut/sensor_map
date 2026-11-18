@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import kr.ac.campusroute.ui.shared.SharedRoutesScreen
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.ui.Modifier
@@ -16,6 +18,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kr.ac.campusroute.data.repository.AssetCampusRepository
 import kr.ac.campusroute.ui.CampusViewModel
 import kr.ac.campusroute.ui.map.HomeScreen
+import kr.ac.campusroute.ui.map.DepartureDialog
+import kr.ac.campusroute.ui.map.rememberDeviceLocation
 import kr.ac.campusroute.ui.navigation.NavigationScreen
 
 class MainActivity : ComponentActivity() {
@@ -29,18 +33,26 @@ class MainActivity : ComponentActivity() {
                     override fun <T : ViewModel> create(modelClass: Class<T>): T = CampusViewModel(AssetCampusRepository(assets).load()) as T
                 })
                 val state by model.state.collectAsStateWithLifecycle()
-                val lifecycle = LocalLifecycleOwner.current.lifecycle
-                DisposableEffect(lifecycle, model) {
-                    val observer = LifecycleEventObserver { _, _ -> model.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
-                    lifecycle.addObserver(observer)
-                    model.setForeground(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED))
-                    onDispose { lifecycle.removeObserver(observer); model.setForeground(false) }
-                }
+                val location = rememberDeviceLocation()
+                LaunchedEffect(location.state) { model.updateLocation(location.state) }
+                val displayLocation=location.copy(state=state.location,headingDegrees=location.headingDegrees.takeIf { state.location.canFollow })
+                var tab by rememberSaveable { mutableIntStateOf(0) }
                 BackHandler(state.navigating) { if (state.mapPreview) model.toggleMap() else model.end() }
+                DepartureDialog(model,state)
                 Surface(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
-                        if (state.navigating && !state.mapPreview) NavigationScreen(model, state)
-                        else HomeScreen(model, state)
+                        if (state.navigating && !state.mapPreview) NavigationScreen(model, state, displayLocation.headingDegrees)
+                        else if(state.navigating) HomeScreen(model,state,displayLocation)
+                        else Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.weight(1f).fillMaxWidth()) {
+                                if(tab==0) HomeScreen(model,state,displayLocation)
+                                else SharedRoutesScreen(model,state,displayLocation)
+                            }
+                            NavigationBar {
+                                NavigationBarItem(selected=tab==0,onClick={tab=0; model.clearMessage()},icon={Text("⌖")},label={Text("지도")})
+                                NavigationBarItem(selected=tab==1,onClick={tab=1; model.clearMessage()},icon={Text("⇄")},label={Text("공유 경로")})
+                            }
+                        }
                     }
                 }
             }

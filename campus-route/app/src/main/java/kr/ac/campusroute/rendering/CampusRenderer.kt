@@ -15,6 +15,12 @@ data class OverviewCamera(val center: Point, val zoom: Float)
 
 /** Real world-space meshes, perspective projection and depth testing; no Canvas projection. */
 class CampusRenderer(private val campus: Campus, private val route: Route) : GLSurfaceView.Renderer {
+    @Volatile var showUserMarker = true
+    @Volatile var userHeadingKnown = true
+    @Volatile var showDestination = true
+    @Volatile var userMarkerReliable = true
+    @Volatile var userAccuracyMetres: Double? = null
+    private var previouslyVisible = false
     @Volatile var overview: OverviewCamera? = null
     private var aspect = 1f
     @Volatile var target: RoutePose = routePose(route, 0.0)
@@ -34,10 +40,18 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
     private val vp = FloatArray(16)
     private val mvp = FloatArray(16)
     private val cube = makeCube()
+    private val avatarSphere = makeAvatarSphere()
     private val buildingMesh = makeBuildingMesh()
     private val pathMesh = makePathMesh()
     private val shadowMesh = makeShadowMesh()
-    private val arrow = buffer(floatArrayOf(0f,0f,-2.8f,1f, -1.5f,0f,1f,1f, 1.5f,0f,1f,1f))
+    private val accuracyRing = buffer((0 until 96).flatMap { i ->
+        val a=i*2*PI/96; val b=(i+1)*2*PI/96
+        listOf(cos(a).toFloat(),0f,sin(a).toFloat(),1f,cos(b).toFloat(),0f,sin(b).toFloat(),1f)
+    }.toFloatArray())
+    private val arrow = buffer(floatArrayOf(
+        -.24f,0f,.25f,1f, .24f,0f,.25f,1f, .24f,0f,-3.5f,1f,
+        -.24f,0f,.25f,1f, .24f,0f,-3.5f,1f, -.24f,0f,-3.5f,1f,
+        0f,0f,-5.5f,1f, -1.05f,0f,-3.2f,1f, 1.05f,0f,-3.2f,1f))
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         glClearColor(.96f, .96f, .96f, 1f)
@@ -65,13 +79,19 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         val dt = if (previousTime == 0L) 0.016 else ((now - previousTime) / 1e9).coerceIn(0.0, 0.1)
         previousTime = now
         val pose = target // One immutable snapshot shared from the Compose/UI thread.
-        avatarPosition = avatarPosition.interpolate(pose.position, 1 - exp(-dt * 12))
-        avatarHeading = smoothHeading(avatarHeading, pose.heading, dt)
-        cameraPosition = cameraPosition.interpolate(avatarPosition, 1 - exp(-dt * 6))
-        cameraHeading = smoothHeading(cameraHeading, pose.heading, dt)
+        // Coordinates are the accepted measurement, not an independently animated simulation.
+        avatarPosition = pose.position
+        cameraPosition = pose.position
+        if (!previouslyVisible || !userMarkerReliable) {
+            avatarHeading=pose.heading; cameraHeading=pose.heading
+        } else {
+            avatarHeading = smoothHeading(avatarHeading, pose.heading, dt)
+            cameraHeading = smoothHeading(cameraHeading, pose.heading, dt)
+        }
+        previouslyVisible = showUserMarker
         val dx = sin(cameraHeading).toFloat(); val dz = -cos(cameraHeading).toFloat()
         val x = cameraPosition.x.toFloat(); val z = -cameraPosition.y.toFloat()
-        Matrix.setLookAtM(view, 0, x - dx * 19, 15f, z - dz * 19, x + dx * 13, 0f, z + dz * 13, 0f, 1f, 0f)
+        Matrix.setLookAtM(view, 0, x - dx * 19, 19f, z - dz * 19, x + dx * 11, 0f, z + dz * 11, 0f, 1f, 0f)
         overview?.let { camera ->
             val distance = max(campus.mapHeight, campus.mapWidth / aspect) * 1.15f / camera.zoom
             val cx = camera.center.x.toFloat(); val cz = -camera.center.y.toFloat()
@@ -90,34 +110,83 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         glDepthMask(true); glEnable(GL_DEPTH_TEST)
         draw(buildingMesh, buildingMesh.capacity() / 4, floatArrayOf(.98f,.98f,.98f,1f))
         val blue = floatArrayOf(.10f,.38f,.98f,1f)
-        val done = floatArrayOf(.66f,.66f,.66f,1f)
+        val routeColor = if (route.origin == RouteOrigin.SHARED) floatArrayOf(22f/255,131f/255,74f/255,1f) else blue
+        val done = if (route.origin == RouteOrigin.SHARED) floatArrayOf(.55f,.73f,.62f,1f) else floatArrayOf(.66f,.66f,.66f,1f)
         route.nodes.zipWithNext().forEachIndexed { index, (a, b) ->
             when {
                 pose.arrived || index < pose.segment -> road(a.position, b.position, 1.8f, .16f, done)
                 index == pose.segment -> {
-                    road(a.position, pose.position, 1.8f, .16f, done)
-                    road(pose.position, b.position, 1.8f, .16f, blue)
+                    val matched = routePose(route, route.geometricDistance - pose.remaining).position
+                    road(a.position, matched, 1.8f, .16f, done)
+                    road(matched, b.position, 1.8f, .16f, routeColor)
                 }
-                else -> road(a.position, b.position, 1.8f, .16f, blue)
+                else -> road(a.position, b.position, 1.8f, .16f, routeColor)
             }
         }
         if (!pose.arrived && pose.instruction != "목적지까지 직진") {
             val turn = routePose(route, route.geometricDistance - pose.remaining + pose.nextDistance).position
             box(turn.x.toFloat(), .25f, -turn.y.toFloat(), 3.5f, .15f, 3.5f, 45f, floatArrayOf(.22f,.22f,.22f,1f))
         }
+        if (showDestination) {
         val goal = route.nodes.last().position
         box(goal.x.toFloat(), 2f, -goal.y.toFloat(), .4f, 4f, .4f, 0f, floatArrayOf(.25f,.25f,.25f,1f))
         box(goal.x.toFloat() + 1.3f, 3.5f, -goal.y.toFloat(), 2.5f, 1.4f, .3f, 0f, floatArrayOf(.25f,.25f,.25f,1f))
-        // A true 3D location marker with body and head, and a world-space direction arrow.
-        val ax = avatarPosition.x.toFloat(); val az = -avatarPosition.y.toFloat()
-        val rotation = -Math.toDegrees(avatarHeading).toFloat()
-        box(ax, 1.3f, az, 1.2f, 2.2f, .9f, rotation, blue)
-        box(ax, 2.9f, az, .85f, .85f, .85f, rotation, floatArrayOf(.96f,.96f,.96f,1f))
-        Matrix.setIdentityM(model, 0)
-        Matrix.translateM(model, 0, ax + sin(avatarHeading).toFloat() * 4, .3f, az - cos(avatarHeading).toFloat() * 4)
-        Matrix.rotateM(model, 0, rotation, 0f, 1f, 0f)
-        draw(arrow, 3, blue)
+        }
+        if (!showUserMarker) return
+        val markerColor = if (userMarkerReliable) blue else floatArrayOf(.48f,.48f,.48f,1f)
+        userAccuracyMetres?.let { radius ->
+            Matrix.setIdentityM(model,0)
+            Matrix.translateM(model,0,avatarPosition.x.toFloat(),.22f,-avatarPosition.y.toFloat())
+            Matrix.scaleM(model,0,radius.toFloat(),1f,radius.toFloat())
+            draw(accuracyRing,192,markerColor,GL_LINES)
+        }
+        // One ground anchor and rotation for the person and the attached direction arrow.
+        val ax=avatarPosition.x.toFloat(); val az=-avatarPosition.y.toFloat()
+        val rotation=-Math.toDegrees(avatarHeading).toFloat()
+        Matrix.setIdentityM(model,0)
+        Matrix.translateM(model,0,ax,.27f,az)
+        Matrix.rotateM(model,0,rotation,0f,1f,0f)
+        if(userHeadingKnown) draw(arrow,9,markerColor)
+        val body=if(userMarkerReliable) floatArrayOf(.12f,.19f,.29f,1f) else floatArrayOf(.40f,.42f,.45f,1f)
+        val head=if(userMarkerReliable) floatArrayOf(.21f,.29f,.39f,1f) else floatArrayOf(.48f,.50f,.52f,1f)
+        fun part(dx: Float,y: Float,dz: Float,rx: Float,ry: Float,rz: Float,color: FloatArray, tilt: Float = 0f) {
+            Matrix.setIdentityM(model,0); Matrix.translateM(model,0,ax,0f,az)
+            Matrix.rotateM(model,0,rotation,0f,1f,0f); Matrix.translateM(model,0,dx,y,dz)
+            Matrix.rotateM(model,0,tilt,0f,0f,1f)
+            Matrix.scaleM(model,0,rx,ry,rz)
+            draw(avatarSphere,avatarSphere.capacity()/4,color)
+        }
+        // Overlapping rounded volumes: feet, longer legs, pelvis, torso, neck and head.
+        part(-.25f,.37f,-.14f,.25f,.17f,.36f,body)
+        part(.25f,.37f,-.14f,.25f,.17f,.36f,body)
+        part(-.25f,.94f,0f,.23f,.65f,.27f,body)
+        part(.25f,.94f,0f,.23f,.65f,.27f,body)
+        part(0f,1.47f,0f,.46f,.34f,.32f,body)
+        part(0f,1.96f,0f,.50f,.68f,.34f,body)
+        part(0f,2.55f,0f,.22f,.27f,.22f,body)
+        // Arms angle down from the shoulders into round, fingerless hands.
+        part(-.62f,1.93f,0f,.18f,.55f,.20f,body,-16f)
+        part(.62f,1.93f,0f,.18f,.55f,.20f,body,16f)
+        part(-.78f,1.43f,-.03f,.23f,.23f,.23f,body)
+        part(.78f,1.43f,-.03f,.23f,.23f,.23f,body)
+        part(0f,3.03f,0f,.58f,.59f,.56f,head)
     }
+    private fun makeAvatarSphere(): java.nio.FloatBuffer {
+        val data=mutableListOf<Float>()
+        fun vertex(latitude: Double,longitude: Double) {
+            val x=cos(latitude)*cos(longitude); val y=sin(latitude); val z=cos(latitude)*sin(longitude)
+            val shade=(.70+.30*max(0.0,-.4*x+.7*y+.5*z)).toFloat()
+            data.addAll(listOf(x.toFloat(),y.toFloat(),z.toFloat(),shade))
+        }
+        for(i in 0 until 16) for(j in 0 until 32) {
+            val a=-PI/2+i*PI/16; val b=-PI/2+(i+1)*PI/16
+            val c=j*2*PI/32; val d=(j+1)*2*PI/32
+            vertex(a,c); vertex(b,c); vertex(b,d)
+            vertex(a,c); vertex(b,d); vertex(a,d)
+        }
+        return buffer(data.toFloatArray())
+    }
+
     private fun road(a: Point, b: Point, width: Float, height: Float, color: FloatArray) {
         val length = a.distance(b)
         if (length < .001) return
@@ -128,13 +197,13 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         Matrix.rotateM(model, 0, rotation, 0f, 1f, 0f); Matrix.scaleM(model, 0, w, h, d)
         draw(cube, 36, color)
     }
-    private fun draw(vertices: java.nio.FloatBuffer, count: Int, color: FloatArray) {
+    private fun draw(vertices: java.nio.FloatBuffer, count: Int, color: FloatArray, primitive: Int = GL_TRIANGLES) {
         Matrix.multiplyMM(mvp, 0, vp, 0, model, 0)
         glUniformMatrix4fv(matrixUniform, 1, false, mvp, 0); glUniform4fv(colorUniform, 1, color, 0)
         if (count == 0) return
         vertices.position(0); glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, false, 16, vertices); glEnableVertexAttribArray(positionAttribute)
         vertices.position(3); glVertexAttribPointer(shadeAttribute, 1, GL_FLOAT, false, 16, vertices); glEnableVertexAttribArray(shadeAttribute)
-        glDrawArrays(GL_TRIANGLES, 0, count)
+        glDrawArrays(primitive, 0, count)
     }
     private fun shader(type: Int, code: String): Int {
         val shader = glCreateShader(type); glShaderSource(shader, code); glCompileShader(shader)
