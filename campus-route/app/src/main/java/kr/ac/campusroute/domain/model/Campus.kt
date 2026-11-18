@@ -9,7 +9,7 @@ data class Point(val x: Double, val y: Double) {
 }
 data class Node(val id: String, val position: Point, val name: String, val latitude: Double? = null, val longitude: Double? = null)
 data class Edge(val from: String, val to: String, val distance: Double, val accessible: Boolean = true, val directed: Boolean = false)
-data class Building(val name: String, val center: Point, val width: Double, val depth: Double, val height: Double, val footprint: List<Point> = emptyList())
+data class Building(val name: String, val center: Point, val width: Double, val depth: Double, val height: Double, val footprint: List<Point> = emptyList(), val id: String = name)
 data class Destination(val id: String, val name: String, val nodeId: String)
 data class Campus(val version: String, val name: String, val nodes: List<Node>, val edges: List<Edge>, val buildings: List<Building>, val boundary: List<Point> = emptyList(), val startNodeId: String = nodes.first().id, val destinations: List<Destination> = nodes.map { Destination(it.id, it.name, it.id) }, val originLatitude: Double = 36.6285, val originLongitude: Double = 127.4565) {
     val center: Point get() {

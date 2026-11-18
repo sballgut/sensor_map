@@ -44,7 +44,6 @@ fun CampusMapPanel(
     permissionDenied: Boolean = false, headingDegrees: Double? = null, initiallyFollowing: Boolean = true
 ) {
     var show3d by remember { mutableStateOf(false) }
-    var mapInfoExpanded by rememberSaveable { mutableStateOf(true) }
     val previewPoints=if(!initiallyFollowing) route?.nodes?.map { it.position }.orEmpty() else emptyList()
     val initialCenter=if(previewPoints.isEmpty()) campus.center else Point((previewPoints.minOf { it.x }+previewPoints.maxOf { it.x })/2,(previewPoints.minOf { it.y }+previewPoints.maxOf { it.y })/2)
     val initialZoom=if(previewPoints.isEmpty()) 1f else min(campus.mapWidth/(previewPoints.maxOf { it.x }-previewPoints.minOf { it.x }+150),campus.mapHeight/(previewPoints.maxOf { it.y }-previewPoints.minOf { it.y }+150)).toFloat().coerceIn(.5f,8f)
@@ -76,30 +75,14 @@ fun CampusMapPanel(
             }
             MapControl("전체", "캠퍼스 전체 보기") { center=campus.center; pan=Offset.Zero; zoom=1f; following=false }
         }
-        Surface(Modifier.align(Alignment.BottomStart).padding(8.dp),color=Color.White.copy(alpha=.94f)) {
-            Column(Modifier.heightIn(max=statusLimit).verticalScroll(rememberScrollState()).padding(6.dp)) {
-                TextButton(
-                    onClick={ mapInfoExpanded=!mapInfoExpanded },
-                    modifier=Modifier.heightIn(min=48.dp).semantics {
-                        stateDescription=if(mapInfoExpanded) "펼쳐짐" else "접힘"
-                    },
-                    contentPadding=PaddingValues(horizontal=6.dp,vertical=4.dp)
-                ) { Text(if(mapInfoExpanded) "지도 정보 접기 ▾" else "지도 정보 ▴") }
-                AnimatedVisibility(visible=mapInfoExpanded) {
-                Column {
-                MapAttribution()
-                Text(locationMessage(location,permissionDenied),style=MaterialTheme.typography.labelMedium)
-                if (outside) Text("개신캠퍼스 밖 · 주변 지도는 제공하지 않음",style=MaterialTheme.typography.labelSmall)
-                if (location.condition==LocationCondition.PERMISSION_REQUIRED) {
-                    Text("지도 표시용 · 화면 사용 중에만 요청 · 저장/전송 없음",style=MaterialTheme.typography.labelSmall)
-                    TextButton(onClick=if(permissionDenied) onOpenLocationSettings else onRequestLocation) { Text(if(permissionDenied) "앱 설정에서 위치 권한 변경" else "내 위치 표시 허용") }
-                } else if (location.condition==LocationCondition.DISABLED) {
-                    TextButton(onClick=onOpenLocationSettings) { Text("기기 위치 켜기") }
-                }
-                Text("N ↑ · 개신캠퍼스 · 오프라인 지도",style=MaterialTheme.typography.labelSmall)
-                }
-                }
+        Column(Modifier.align(Alignment.BottomStart).padding(4.dp)) {
+            if(location.condition==LocationCondition.PERMISSION_REQUIRED) {
+                FilledTonalButton(onClick=if(permissionDenied) onOpenLocationSettings else onRequestLocation) { Text(if(permissionDenied) "위치 권한 설정" else "내 위치 표시 허용") }
+            } else if(location.condition==LocationCondition.DISABLED) {
+                FilledTonalButton(onClick=onOpenLocationSettings) { Text("기기 위치 켜기") }
             }
+            if(outside) Text("개신캠퍼스 밖",style=MaterialTheme.typography.labelSmall)
+            MapAttribution()
         }
     }
 }

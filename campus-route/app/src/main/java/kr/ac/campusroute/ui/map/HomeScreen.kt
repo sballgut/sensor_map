@@ -41,12 +41,25 @@ fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocat
         D1Destination(d.id,d.name,"건물 인근 보행로","OSM 지도 기반 목적지입니다. 실제 건물 출입구와 통행 가능 여부를 현장에서 확인하세요.",n.latitude,n.longitude,false,listOf(d.name.substringBefore(" ·")))
     } }
     Column(Modifier.fillMaxSize().imePadding()) {
+        state.indoorBuildingId?.let { id ->
+            val building=model.campus.buildings.first { it.id==id }
+            Surface(color=MaterialTheme.colorScheme.surfaceVariant) {
+                Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Text("${building.name} 안에서 출발",style=MaterialTheme.typography.titleSmall)
+                    Text("아는 출구로 밖에 나온 뒤 위치를 확인해 주세요. 실내 이동 경로는 표시하지 않습니다.",style=MaterialTheme.typography.bodySmall)
+                    Row {
+                        TextButton(onClick=model::start,enabled=!state.planning) { Text("밖에 나왔어요 · 경로 찾기") }
+                        TextButton(onClick=model::cancelIndoorDeparture) { Text("취소") }
+                    }
+                }
+            }
+        }
         AndroidView(modifier=Modifier.weight(1f).fillMaxWidth(), factory={ context ->
             DestinationHomeView(context) { info=true }.apply host@ {
                 setDestinations(catalog)
                 restoreSelection(saved)
                 state.destination?.let { selectDestination(it) }
-                setRouteAction { model.start() }
+                setRouteAction { model.requestStart() }
                 val map=ComposeView(context).apply {
                     setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
                     setContent {

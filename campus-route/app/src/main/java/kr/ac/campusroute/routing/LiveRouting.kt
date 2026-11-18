@@ -24,6 +24,7 @@ fun matchRoute(route: Route, position: Point): RouteMatch {
 
 /** Start on the nearest accessible edge, preserving its direction and cost. No invented connector. */
 fun routeFromPosition(campus: Campus, position: Point, destination: String, planner: RoutePlanner=AStar()): Route? {
+    if(campus.buildings.any { footprintContains(position,it.footprint) }) return null
     val edge=campus.edges.filter { it.accessible }.minByOrNull {
         projectSegment(position,campus.byId.getValue(it.from).position,campus.byId.getValue(it.to).position).first.distance(position)
     } ?: return null

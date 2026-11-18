@@ -40,6 +40,7 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
     private val vp = FloatArray(16)
     private val mvp = FloatArray(16)
     private val cube = makeCube()
+    private val avatarSphere = makeAvatarSphere()
     private val buildingMesh = makeBuildingMesh()
     private val pathMesh = makePathMesh()
     private val shadowMesh = makeShadowMesh()
@@ -47,7 +48,10 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         val a=i*2*PI/96; val b=(i+1)*2*PI/96
         listOf(cos(a).toFloat(),0f,sin(a).toFloat(),1f,cos(b).toFloat(),0f,sin(b).toFloat(),1f)
     }.toFloatArray())
-    private val arrow = buffer(floatArrayOf(0f,0f,-2.8f,1f, -1.5f,0f,1f,1f, 1.5f,0f,1f,1f))
+    private val arrow = buffer(floatArrayOf(
+        -.24f,0f,.25f,1f, .24f,0f,.25f,1f, .24f,0f,-3.5f,1f,
+        -.24f,0f,.25f,1f, .24f,0f,-3.5f,1f, -.24f,0f,-3.5f,1f,
+        0f,0f,-5.5f,1f, -1.05f,0f,-3.2f,1f, 1.05f,0f,-3.2f,1f))
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         glClearColor(.96f, .96f, .96f, 1f)
@@ -136,16 +140,44 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
             Matrix.scaleM(model,0,radius.toFloat(),1f,radius.toFloat())
             draw(accuracyRing,192,markerColor,GL_LINES)
         }
-        // A true 3D location marker with body and head, and a world-space direction arrow.
-        val ax = avatarPosition.x.toFloat(); val az = -avatarPosition.y.toFloat()
-        val rotation = -Math.toDegrees(avatarHeading).toFloat()
-        box(ax, 1.3f, az, 1.2f, 2.2f, .9f, rotation, markerColor)
-        box(ax, 2.9f, az, .85f, .85f, .85f, rotation, floatArrayOf(.96f,.96f,.96f,1f))
-        Matrix.setIdentityM(model, 0)
-        Matrix.translateM(model, 0, ax + sin(avatarHeading).toFloat() * 4, .3f, az - cos(avatarHeading).toFloat() * 4)
-        Matrix.rotateM(model, 0, rotation, 0f, 1f, 0f)
-        if (userHeadingKnown) draw(arrow, 3, markerColor)
+        // One ground anchor and rotation for the person and the attached direction arrow.
+        val ax=avatarPosition.x.toFloat(); val az=-avatarPosition.y.toFloat()
+        val rotation=-Math.toDegrees(avatarHeading).toFloat()
+        Matrix.setIdentityM(model,0)
+        Matrix.translateM(model,0,ax,.27f,az)
+        Matrix.rotateM(model,0,rotation,0f,1f,0f)
+        if(userHeadingKnown) draw(arrow,9,markerColor)
+        val body=if(userMarkerReliable) floatArrayOf(.12f,.19f,.29f,1f) else floatArrayOf(.40f,.42f,.45f,1f)
+        val head=if(userMarkerReliable) floatArrayOf(.21f,.29f,.39f,1f) else floatArrayOf(.48f,.50f,.52f,1f)
+        fun part(dx: Float,y: Float,dz: Float,rx: Float,ry: Float,rz: Float,color: FloatArray) {
+            Matrix.setIdentityM(model,0); Matrix.translateM(model,0,ax,0f,az)
+            Matrix.rotateM(model,0,rotation,0f,1f,0f); Matrix.translateM(model,0,dx,y,dz)
+            Matrix.scaleM(model,0,rx,ry,rz)
+            draw(avatarSphere,avatarSphere.capacity()/4,color)
+        }
+        part(-.25f,.72f,0f,.23f,.51f,.27f,body)
+        part(.25f,.72f,0f,.23f,.51f,.27f,body)
+        part(0f,1.68f,0f,.59f,.78f,.39f,body)
+        part(-.65f,1.63f,0f,.20f,.59f,.23f,body)
+        part(.65f,1.63f,0f,.20f,.59f,.23f,body)
+        part(0f,2.75f,0f,.46f,.46f,.46f,head)
     }
+    private fun makeAvatarSphere(): java.nio.FloatBuffer {
+        val data=mutableListOf<Float>()
+        fun vertex(latitude: Double,longitude: Double) {
+            val x=cos(latitude)*cos(longitude); val y=sin(latitude); val z=cos(latitude)*sin(longitude)
+            val shade=(.70+.30*max(0.0,-.4*x+.7*y+.5*z)).toFloat()
+            data.addAll(listOf(x.toFloat(),y.toFloat(),z.toFloat(),shade))
+        }
+        for(i in 0 until 12) for(j in 0 until 24) {
+            val a=-PI/2+i*PI/12; val b=-PI/2+(i+1)*PI/12
+            val c=j*2*PI/24; val d=(j+1)*2*PI/24
+            vertex(a,c); vertex(b,c); vertex(b,d)
+            vertex(a,c); vertex(b,d); vertex(a,d)
+        }
+        return buffer(data.toFloatArray())
+    }
+
     private fun road(a: Point, b: Point, width: Float, height: Float, color: FloatArray) {
         val length = a.distance(b)
         if (length < .001) return

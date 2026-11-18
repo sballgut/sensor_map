@@ -25,7 +25,7 @@ class AssetCampusRepository(private val assets: AssetManager) : CampusRepository
         val buildingsJson = json.getJSONArray("buildings")
         val buildings = (0 until buildingsJson.length()).map { i ->
             val b = buildingsJson.getJSONObject(i)
-            Building(b.getString("name"), Point(b.getDouble("x"), b.getDouble("y")), b.getDouble("width"), b.getDouble("depth"), b.getDouble("height"), points(b.getJSONArray("footprint")))
+            Building(b.getString("name"), Point(b.getDouble("x"), b.getDouble("y")), b.getDouble("width"), b.getDouble("depth"), b.getDouble("height"), points(b.getJSONArray("footprint")), b.getString("id"))
         }
         val destinationsJson = json.getJSONArray("destinations")
         val destinations = (0 until destinationsJson.length()).map {

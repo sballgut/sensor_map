@@ -18,6 +18,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kr.ac.campusroute.data.repository.AssetCampusRepository
 import kr.ac.campusroute.ui.CampusViewModel
 import kr.ac.campusroute.ui.map.HomeScreen
+import kr.ac.campusroute.ui.map.DepartureDialog
 import kr.ac.campusroute.ui.map.rememberDeviceLocation
 import kr.ac.campusroute.ui.navigation.NavigationScreen
 
@@ -37,6 +38,7 @@ class MainActivity : ComponentActivity() {
                 val displayLocation=location.copy(state=state.location,headingDegrees=location.headingDegrees.takeIf { state.location.canFollow })
                 var tab by rememberSaveable { mutableIntStateOf(0) }
                 BackHandler(state.navigating) { if (state.mapPreview) model.toggleMap() else model.end() }
+                DepartureDialog(model,state)
                 Surface(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         if (state.navigating && !state.mapPreview) NavigationScreen(model, state, displayLocation.headingDegrees)
