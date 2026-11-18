@@ -91,7 +91,7 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         previouslyVisible = showUserMarker
         val dx = sin(cameraHeading).toFloat(); val dz = -cos(cameraHeading).toFloat()
         val x = cameraPosition.x.toFloat(); val z = -cameraPosition.y.toFloat()
-        Matrix.setLookAtM(view, 0, x - dx * 19, 15f, z - dz * 19, x + dx * 13, 0f, z + dz * 13, 0f, 1f, 0f)
+        Matrix.setLookAtM(view, 0, x - dx * 19, 19f, z - dz * 19, x + dx * 11, 0f, z + dz * 11, 0f, 1f, 0f)
         overview?.let { camera ->
             val distance = max(campus.mapHeight, campus.mapWidth / aspect) * 1.15f / camera.zoom
             val cx = camera.center.x.toFloat(); val cz = -camera.center.y.toFloat()
@@ -149,18 +149,27 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         if(userHeadingKnown) draw(arrow,9,markerColor)
         val body=if(userMarkerReliable) floatArrayOf(.12f,.19f,.29f,1f) else floatArrayOf(.40f,.42f,.45f,1f)
         val head=if(userMarkerReliable) floatArrayOf(.21f,.29f,.39f,1f) else floatArrayOf(.48f,.50f,.52f,1f)
-        fun part(dx: Float,y: Float,dz: Float,rx: Float,ry: Float,rz: Float,color: FloatArray) {
+        fun part(dx: Float,y: Float,dz: Float,rx: Float,ry: Float,rz: Float,color: FloatArray, tilt: Float = 0f) {
             Matrix.setIdentityM(model,0); Matrix.translateM(model,0,ax,0f,az)
             Matrix.rotateM(model,0,rotation,0f,1f,0f); Matrix.translateM(model,0,dx,y,dz)
+            Matrix.rotateM(model,0,tilt,0f,0f,1f)
             Matrix.scaleM(model,0,rx,ry,rz)
             draw(avatarSphere,avatarSphere.capacity()/4,color)
         }
-        part(-.25f,.72f,0f,.23f,.51f,.27f,body)
-        part(.25f,.72f,0f,.23f,.51f,.27f,body)
-        part(0f,1.68f,0f,.59f,.78f,.39f,body)
-        part(-.65f,1.63f,0f,.20f,.59f,.23f,body)
-        part(.65f,1.63f,0f,.20f,.59f,.23f,body)
-        part(0f,2.75f,0f,.46f,.46f,.46f,head)
+        // Overlapping rounded volumes: feet, longer legs, pelvis, torso, neck and head.
+        part(-.25f,.37f,-.14f,.25f,.17f,.36f,body)
+        part(.25f,.37f,-.14f,.25f,.17f,.36f,body)
+        part(-.25f,.94f,0f,.23f,.65f,.27f,body)
+        part(.25f,.94f,0f,.23f,.65f,.27f,body)
+        part(0f,1.47f,0f,.46f,.34f,.32f,body)
+        part(0f,1.96f,0f,.50f,.68f,.34f,body)
+        part(0f,2.55f,0f,.22f,.27f,.22f,body)
+        // Arms angle down from the shoulders into round, fingerless hands.
+        part(-.62f,1.93f,0f,.18f,.55f,.20f,body,-16f)
+        part(.62f,1.93f,0f,.18f,.55f,.20f,body,16f)
+        part(-.78f,1.43f,-.03f,.23f,.23f,.23f,body)
+        part(.78f,1.43f,-.03f,.23f,.23f,.23f,body)
+        part(0f,3.03f,0f,.58f,.59f,.56f,head)
     }
     private fun makeAvatarSphere(): java.nio.FloatBuffer {
         val data=mutableListOf<Float>()
@@ -169,9 +178,9 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
             val shade=(.70+.30*max(0.0,-.4*x+.7*y+.5*z)).toFloat()
             data.addAll(listOf(x.toFloat(),y.toFloat(),z.toFloat(),shade))
         }
-        for(i in 0 until 12) for(j in 0 until 24) {
-            val a=-PI/2+i*PI/12; val b=-PI/2+(i+1)*PI/12
-            val c=j*2*PI/24; val d=(j+1)*2*PI/24
+        for(i in 0 until 16) for(j in 0 until 32) {
+            val a=-PI/2+i*PI/16; val b=-PI/2+(i+1)*PI/16
+            val c=j*2*PI/32; val d=(j+1)*2*PI/32
             vertex(a,c); vertex(b,c); vertex(b,d)
             vertex(a,c); vertex(b,d); vertex(a,d)
         }
