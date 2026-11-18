@@ -175,7 +175,9 @@ private fun CampusMap(campus: Campus, route: Route?, current: Point?, accuracy: 
                 val tip=marker+forward*27.dp.toPx()
                 val left=marker+forward*12.dp.toPx()-right*7.dp.toPx()
                 val side=marker+forward*12.dp.toPx()+right*7.dp.toPx()
-                drawPath(Path().apply { moveTo(tip.x,tip.y); lineTo(left.x,left.y); lineTo(side.x,side.y); close() },color)
+                val pointer=Path().apply { moveTo(tip.x,tip.y); lineTo(left.x,left.y); lineTo(side.x,side.y); close() }
+                drawPath(pointer,Color.White,style=Stroke(3.dp.toPx(),join=androidx.compose.ui.graphics.StrokeJoin.Round))
+                drawPath(pointer,color)
             }
             drawCircle(color.copy(alpha=.20f),17.dp.toPx(),marker)
             drawCircle(color,8.dp.toPx(),marker)

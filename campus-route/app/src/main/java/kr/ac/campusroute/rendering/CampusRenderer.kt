@@ -40,7 +40,7 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
     private val vp = FloatArray(16)
     private val mvp = FloatArray(16)
     private val cube = makeCube()
-    private val avatarSphere = makeAvatarSphere()
+    private val markerDisc = makeMarkerDisc()
     private val buildingMesh = makeBuildingMesh()
     private val pathMesh = makePathMesh()
     private val shadowMesh = makeShadowMesh()
@@ -49,9 +49,7 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
         listOf(cos(a).toFloat(),0f,sin(a).toFloat(),1f,cos(b).toFloat(),0f,sin(b).toFloat(),1f)
     }.toFloatArray())
     private val arrow = buffer(floatArrayOf(
-        -.24f,0f,.25f,1f, .24f,0f,.25f,1f, .24f,0f,-3.5f,1f,
-        -.24f,0f,.25f,1f, .24f,0f,-3.5f,1f, -.24f,0f,-3.5f,1f,
-        0f,0f,-5.5f,1f, -1.05f,0f,-3.2f,1f, 1.05f,0f,-3.2f,1f))
+        0f,0f,-1f,1f, -.72f,0f,.55f,1f, .72f,0f,.55f,1f))
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         glClearColor(.96f, .96f, .96f, 1f)
@@ -140,56 +138,45 @@ class CampusRenderer(private val campus: Campus, private val route: Route) : GLS
             Matrix.scaleM(model,0,radius.toFloat(),1f,radius.toFloat())
             draw(accuracyRing,192,markerColor,GL_LINES)
         }
-        // One ground anchor and rotation for the person and the attached direction arrow.
+        // The dot stays at the accepted location; only the small pointer rotates.
         val ax=avatarPosition.x.toFloat(); val az=-avatarPosition.y.toFloat()
         val rotation=-Math.toDegrees(avatarHeading).toFloat()
-        Matrix.setIdentityM(model,0)
-        Matrix.translateM(model,0,ax,.27f,az)
-        Matrix.rotateM(model,0,rotation,0f,1f,0f)
-        Matrix.scaleM(model,0,1f,1f,1.4f)
-        if(userHeadingKnown) draw(arrow,9,markerColor)
-        val body=if(userMarkerReliable) floatArrayOf(.96f,.97f,.98f,1f) else floatArrayOf(.40f,.42f,.45f,1f)
-        val head=if(userMarkerReliable) floatArrayOf(1f,1f,1f,1f) else floatArrayOf(.48f,.50f,.52f,1f)
-        fun part(dx: Float,y: Float,dz: Float,rx: Float,ry: Float,rz: Float,color: FloatArray, tilt: Float = 0f) {
-            Matrix.setIdentityM(model,0); Matrix.translateM(model,0,ax,.20f,az)
-            Matrix.rotateM(model,0,rotation,0f,1f,0f)
-            // Enlarge about the feet, keeping the accepted ground position unchanged.
-            Matrix.scaleM(model,0,1.4f,1.4f,1.4f)
-            Matrix.translateM(model,0,dx,y-.20f,dz)
-            Matrix.rotateM(model,0,tilt,0f,0f,1f)
-            Matrix.scaleM(model,0,rx,ry,rz)
-            draw(avatarSphere,avatarSphere.capacity()/4,color)
+        fun disc(radius: Float, height: Float, color: FloatArray) {
+            Matrix.setIdentityM(model,0)
+            Matrix.translateM(model,0,ax,height,az)
+            Matrix.scaleM(model,0,radius,1f,radius)
+            draw(markerDisc,96*3,color)
         }
-        // Overlapping rounded volumes: feet, longer legs, pelvis, torso, neck and head.
-        part(-.25f,.37f,-.14f,.25f,.17f,.36f,body)
-        part(.25f,.37f,-.14f,.25f,.17f,.36f,body)
-        part(-.25f,.94f,0f,.23f,.65f,.27f,body)
-        part(.25f,.94f,0f,.23f,.65f,.27f,body)
-        part(0f,1.47f,0f,.46f,.34f,.32f,body)
-        part(0f,1.96f,0f,.50f,.68f,.34f,body)
-        part(0f,2.55f,0f,.22f,.27f,.22f,body)
-        // Arms angle down from the shoulders into round, fingerless hands.
-        part(-.62f,1.93f,0f,.18f,.55f,.20f,body,-16f)
-        part(.62f,1.93f,0f,.18f,.55f,.20f,body,16f)
-        part(-.78f,1.43f,-.03f,.23f,.23f,.23f,body)
-        part(.78f,1.43f,-.03f,.23f,.23f,.23f,body)
-        part(0f,3.03f,0f,.58f,.59f,.56f,head)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA)
+        glDepthMask(false)
+        disc(2.4f,.28f,markerColor.copyOf().apply { this[3]=.10f })
+        disc(1.9f,.29f,markerColor.copyOf().apply { this[3]=.14f })
+        glDepthMask(true)
+        glDisable(GL_BLEND)
+        val white=floatArrayOf(1f,1f,1f,1f)
+        if(userHeadingKnown && userMarkerReliable) {
+            fun pointer(scale: Float,height: Float,color: FloatArray) {
+                Matrix.setIdentityM(model,0)
+                Matrix.translateM(model,0,ax,height,az)
+                Matrix.rotateM(model,0,rotation,0f,1f,0f)
+                Matrix.translateM(model,0,0f,0f,-1.9f)
+                Matrix.scaleM(model,0,scale,1f,scale)
+                draw(arrow,3,color)
+            }
+            pointer(1f,.32f,white)
+            pointer(.70f,.34f,markerColor)
+        }
+        disc(1.05f,.36f,white)
+        disc(.78f,.38f,markerColor)
     }
-    private fun makeAvatarSphere(): java.nio.FloatBuffer {
-        val data=mutableListOf<Float>()
-        fun vertex(latitude: Double,longitude: Double) {
-            val x=cos(latitude)*cos(longitude); val y=sin(latitude); val z=cos(latitude)*sin(longitude)
-            val shade=(.55+.45*max(0.0,-.4*x+.7*y+.5*z)).toFloat()
-            data.addAll(listOf(x.toFloat(),y.toFloat(),z.toFloat(),shade))
-        }
-        for(i in 0 until 16) for(j in 0 until 32) {
-            val a=-PI/2+i*PI/16; val b=-PI/2+(i+1)*PI/16
-            val c=j*2*PI/32; val d=(j+1)*2*PI/32
-            vertex(a,c); vertex(b,c); vertex(b,d)
-            vertex(a,c); vertex(b,d); vertex(a,d)
-        }
-        return buffer(data.toFloatArray())
-    }
+    private fun makeMarkerDisc(): java.nio.FloatBuffer = buffer(
+        (0 until 96).flatMap { i ->
+            val a=i*2*PI/96; val b=(i+1)*2*PI/96
+            listOf(0f,0f,0f,1f,cos(a).toFloat(),0f,sin(a).toFloat(),1f,
+                cos(b).toFloat(),0f,sin(b).toFloat(),1f)
+        }.toFloatArray()
+    )
 
     private fun road(a: Point, b: Point, width: Float, height: Float, color: FloatArray) {
         val length = a.distance(b)
