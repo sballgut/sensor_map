@@ -51,3 +51,7 @@ A/B BLE 융합, 기록·공유, QR, 서버 전송은 미연결입니다. OSM 목
 - [OSM 데이터 출처](data/osm/README.md), [SMASH-CBNU ODbL 건물 윤곽 출처](data/smash-cbnu/README.md)
 
 지도 범위는 개신캠퍼스입니다. OSM/SMASH-CBNU ODbL 고지를 유지합니다. 네이버 지도 이미지는 디자인 참고로만 사용했으며 지도 이미지·게임 코드를 복제하지 않았습니다. 이전 데모 구현 설명은 [이전 README](docs/README_PRE_LIVE.md)에 보관했습니다.
+
+### 지도 정보 접기·펼치기
+지도 왼쪽 아래의 지도 정보 버튼으로 위치 상태·방향·오프라인 지도 설명을 펼치거나 접습니다. 처음에는 펼쳐져 있으며 접으면 OpenStreetMap 출처도 함께 숨깁니다. 화면 회전 후에도 선택을 유지합니다.
+

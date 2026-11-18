@@ -124,3 +124,10 @@ README의 수동 검증 절차로 실제 기기에서 확인해야 한다.
 - 검증 문서: `docs/VALIDATION.md`
 
 Kotlin 파일의 기준 디렉터리는 `app/src/main/java/kr/ac/campusroute/`이며 리소스는 `app/src/main/` 아래에 있다.
+
+## 2026-11-18 지도 정보 접기·펼치기
+- 기본 펼침, 버튼으로 펼침/접힘, rememberSaveable로 화면 재생성 시 상태 보존.
+- 출처 표시와 링크도 함께 접기·펼치기. 위치 상태·권한 버튼은 펼쳤을 때 표시.
+- testDebugUnitTest: 72 tests, 0 failures, 0 errors. assembleDebug 및 lintDebug 성공.
+- 실기기 터치·화면 회전·2D/3D 전환 시 표시 확인은 미수행.
+

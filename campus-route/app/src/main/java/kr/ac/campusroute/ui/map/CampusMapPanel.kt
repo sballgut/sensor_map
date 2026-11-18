@@ -2,11 +2,13 @@ package kr.ac.campusroute.ui.map
 
 import android.graphics.Paint
 import androidx.compose.foundation.Canvas
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.foundation.clickable
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -16,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,7 @@ fun CampusMapPanel(
     permissionDenied: Boolean = false, headingDegrees: Double? = null, initiallyFollowing: Boolean = true
 ) {
     var show3d by remember { mutableStateOf(false) }
+    var mapInfoExpanded by rememberSaveable { mutableStateOf(true) }
     val previewPoints=if(!initiallyFollowing) route?.nodes?.map { it.position }.orEmpty() else emptyList()
     val initialCenter=if(previewPoints.isEmpty()) campus.center else Point((previewPoints.minOf { it.x }+previewPoints.maxOf { it.x })/2,(previewPoints.minOf { it.y }+previewPoints.maxOf { it.y })/2)
     val initialZoom=if(previewPoints.isEmpty()) 1f else min(campus.mapWidth/(previewPoints.maxOf { it.x }-previewPoints.minOf { it.x }+150),campus.mapHeight/(previewPoints.maxOf { it.y }-previewPoints.minOf { it.y }+150)).toFloat().coerceIn(.5f,8f)
@@ -74,6 +78,16 @@ fun CampusMapPanel(
         }
         Surface(Modifier.align(Alignment.BottomStart).padding(8.dp),color=Color.White.copy(alpha=.94f)) {
             Column(Modifier.heightIn(max=statusLimit).verticalScroll(rememberScrollState()).padding(6.dp)) {
+                TextButton(
+                    onClick={ mapInfoExpanded=!mapInfoExpanded },
+                    modifier=Modifier.heightIn(min=48.dp).semantics {
+                        stateDescription=if(mapInfoExpanded) "펼쳐짐" else "접힘"
+                    },
+                    contentPadding=PaddingValues(horizontal=6.dp,vertical=4.dp)
+                ) { Text(if(mapInfoExpanded) "지도 정보 접기 ▾" else "지도 정보 ▴") }
+                AnimatedVisibility(visible=mapInfoExpanded) {
+                Column {
+                MapAttribution()
                 Text(locationMessage(location,permissionDenied),style=MaterialTheme.typography.labelMedium)
                 if (outside) Text("개신캠퍼스 밖 · 주변 지도는 제공하지 않음",style=MaterialTheme.typography.labelSmall)
                 if (location.condition==LocationCondition.PERMISSION_REQUIRED) {
@@ -83,7 +97,8 @@ fun CampusMapPanel(
                     TextButton(onClick=onOpenLocationSettings) { Text("기기 위치 켜기") }
                 }
                 Text("N ↑ · 개신캠퍼스 · 오프라인 지도",style=MaterialTheme.typography.labelSmall)
-                MapAttribution()
+                }
+                }
             }
         }
     }
