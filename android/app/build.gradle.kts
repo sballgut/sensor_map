@@ -6,8 +6,8 @@ android {
         applicationId = "com.example.sensorae"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1-ae"
+        versionCode = 2
+        versionName = "0.2-ae-background"
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
 }

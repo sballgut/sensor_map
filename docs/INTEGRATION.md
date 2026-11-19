@@ -197,9 +197,9 @@ B/C/D는 `activeDirectory()` 아래 **확장자 없는** 파일 `map`, `graph`, 
 | 후보 관리자 검토·상태·철회·이력 | 구현 | C의 현장 검증과 운영 검토 절차 |
 | 버전 manifest·해시·교체·복구 | 구현 | 실제 B/C 자산, 파일 의미 검증, 중단 복구 실기기 시험 |
 | 실제 위치 추정·경로 안내·그래프 생성 | 미포함 | B/C/D 담당 구현 |
-| 화면 꺼짐·백그라운드 장시간 수집 | 미포함 | 필요 시 foreground service와 권한/lifecycle 설계 |
+| 화면 꺼짐·백그라운드 장시간 수집 | 구현, 실기기 확인 필요 | CollectionService + 알림, 앱/알림에서 명시적 중지 |
 
-현재 Activity는 `onStop()`에서 수집을 중지하고 수집 중 화면을 켜 둡니다. 원래 프로젝트의 5분 이후 수신 간격 문제를 이 새 뼈대에서 실기기로 해결했다고 판단하면 안 됩니다. 새 스캔 필터·기기·OS 조합에서 별도 장시간 시험이 필요합니다.
+Activity의 `onStop()`은 화면 갱신/재생만 중지합니다. BLE·방향·GPS 라벨·저장은 Application context만 보유하는 CollectionEngine, 실행 수명과 알림은 CollectionService가 담당합니다. `MainActivity.bridge`는 같은 프로세스의 공유 TeamBridge를 가리킵니다. B/D 리스너에 Activity/View를 장기간 보관하지 마세요. 안내 중 ReleaseInstaller의 버전 고정도 같은 공유 인스턴스를 사용합니다. 원래 5분 이후 수신 간격 문제가 실기기에서 해결됐다는 의미는 아닙니다. 상세 동작/시험은 BACKGROUND_COLLECTION.md를 참고하세요.
 
 ## 10. 함께 수행할 통합 시험
 
