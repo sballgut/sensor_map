@@ -16,6 +16,7 @@ APP = Path('/opt/sensorae-server')
 DATA = Path('/var/lib/sensorae-server')
 ENV = Path('/etc/sensorae-server.env')
 UNIT = Path('/etc/systemd/system/sensorae-server.service')
+RUNTIME_FILES = ('api.py', 'scan_windows.py', 'admin.html')
 
 def run(*args):
     subprocess.run(args, check=True)
@@ -39,7 +40,8 @@ def main():
     for path in (APP, DATA, ENV, UNIT):
         if path.exists() or path.is_symlink():
             raise RuntimeError('Existing path preserved; do not reinstall over it: ' + str(path))
-    for path in (SERVER/'api.py', SERVER/'admin.html', SERVER/'test_api.py', ROOT/'sensorae-server.service'):
+    for path in [*(SERVER/name for name in (*RUNTIME_FILES, 'test_api.py', 'test_scan_windows.py', 'test_contract.py')),
+                 ROOT/'sensorae-server.service']:
         if not path.is_file():
             raise RuntimeError('Package file missing: ' + str(path))
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
@@ -47,7 +49,7 @@ def main():
     print('Running isolated API tests before installing...', flush=True)
     run('/usr/bin/python3', '-m', 'unittest', 'discover', '-s', str(SERVER), '-v')
     APP.mkdir(mode=0o755)
-    for name in ('api.py', 'admin.html'):
+    for name in RUNTIME_FILES:
         destination = APP/name
         with destination.open('xb') as output:
             output.write((SERVER/name).read_bytes())

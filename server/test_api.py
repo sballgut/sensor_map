@@ -3,8 +3,10 @@ import io
 import hashlib
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 import urllib.request
 import urllib.error
@@ -39,6 +41,20 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(first, self.batch("b1", [record()]))
         self.assertEqual("duplicate", self.batch("b2", [record()])["results"][0]["status"])
         self.assertEqual(1, self.store.db.execute("SELECT COUNT(*) FROM observations").fetchone()[0])
+
+    def test_admin_observation_paging(self):
+        path = "/v1/admin/observations"
+        admin = "Bearer administrator-secret"
+        self.batch("initial", [record(str(i)) for i in range(55)])
+        with self.assertRaises(ApiError):
+            self.app.route("GET", path, "Bearer application-secret")
+        first = self.app.route("GET", path, admin)
+        self.assertEqual(55, first["total"])
+        self.assertEqual(50, len(first["rows"]))
+        self.batch("another", [record("new")])
+        older = self.app.route("GET", path + "/before/" + first["next"], admin)
+        self.assertEqual(["4", "3", "2", "1", "0"], [r["record"]["record_id"] for r in older["rows"]])
+        self.assertIsNone(older["next"])
 
     def test_conflicting_id_does_not_replace_original(self):
         self.batch("b1", [record()])
@@ -89,6 +105,64 @@ class ApiTests(unittest.TestCase):
         with self.assertRaises(ApiError) as error:
             self.store.candidate(dict(consent=True, session_id="s1", description="x", evidence_record_ids=["r1"]))
         self.assertIn("recording-time", error.exception.message)
+
+    def test_candidate_retry_after_restart_returns_current_status(self):
+        self.batch("b1", [record(candidate_consent=True)])
+        body = dict(consent=True, session_id="s1", description="Walk", evidence_record_ids=["r1"],
+                    client_submission_id="b5987787-fece-4f52-b721-5af7f0b3e6a7")
+        first = self.store.candidate(body)
+        self.store.transition(first["candidate_id"], dict(status="under_review", reason="Review started"))
+        self.store.close()
+        self.store = Store(self.directory / "db.sqlite", self.directory / "releases")
+        retry = self.store.candidate(dict(reversed(list(body.items()))))
+        self.assertEqual(dict(candidate_id=first["candidate_id"], status="under_review"), retry)
+        with self.assertRaises(ApiError) as conflict:
+            self.store.candidate(dict(body, description="Changed"))
+        self.assertEqual(409, conflict.exception.status)
+        self.assertEqual(1, len(self.store.list_candidates()))
+        self.assertEqual(2, len(self.store.detail(first["candidate_id"])["reviews"]))
+
+    def test_concurrent_candidate_requests_from_two_connections(self):
+        self.batch("b1", [record(candidate_consent=True)])
+        body = dict(consent=True, session_id="s1", description="Walk", evidence_record_ids=["r1"],
+                    client_submission_id="2f816068-eae4-453f-92e6-779eeb34eae9")
+        other = Store(self.directory / "db.sqlite", self.directory / "releases")
+        start = threading.Barrier(2)
+
+        def submit(store):
+            start.wait(timeout=5)
+            return store.candidate(body)
+
+        try:
+            with ThreadPoolExecutor(max_workers=2) as workers:
+                first, second = workers.map(submit, (self.store, other))
+            self.assertEqual(first, second)
+            self.assertEqual(1, len(self.store.detail(first["candidate_id"])["reviews"]))
+        finally:
+            other.close()
+
+    def test_legacy_database_and_submissions_without_id(self):
+        old_db = self.directory / "legacy.sqlite"
+        connection = sqlite3.connect(old_db)
+        try:
+            with connection:
+                connection.execute("CREATE TABLE candidates(candidate_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, "
+                                   "status TEXT NOT NULL, payload TEXT NOT NULL, created_ms INTEGER NOT NULL)")
+                connection.execute("INSERT INTO candidates VALUES('old','s1','approved','{}',100)")
+        finally:
+            connection.close()
+        migrated = Store(old_db, self.directory / "releases")
+        try:
+            self.assertEqual("approved", migrated.detail("old")["status"])
+            migrated.batch(dict(batch_id="b1", records=[record(candidate_consent=True)]))
+            body = dict(consent=True, session_id="s1", description="Walk", evidence_record_ids=["r1"])
+            self.assertNotEqual(migrated.candidate(body)["candidate_id"], migrated.candidate(body)["candidate_id"])
+            for bad_id in (None, "", 123, "x" * 257):
+                with self.subTest(bad_id=bad_id), self.assertRaises(ApiError) as error:
+                    migrated.candidate(dict(body, client_submission_id=bad_id))
+                self.assertEqual(400, error.exception.status)
+        finally:
+            migrated.close()
 
     def test_candidate_accepts_optional_estimates_and_rejects_nonfinite_values(self):
         self.batch("b1", [record(candidate_consent=True)])
@@ -189,7 +263,9 @@ class ApiTests(unittest.TestCase):
                 if isinstance(error.reason, PermissionError):
                     self.skipTest("Localhost socket access is denied by this environment: " + str(error.reason))
                 raise
-            self.assertEqual((200, "application/json", {"status": "ok"}), (status, content_type, json.loads(payload)))
+            self.assertEqual((200, "application/json"), (status, content_type))
+            self.assertEqual("ok", json.loads(payload)["status"])
+            self.assertIs(True, json.loads(payload)["candidate_submission_idempotency"])
             status, content_type, payload = call("/admin")
             self.assertEqual((200, "text/html"), (status, content_type))
             self.assertIn("후보 검토와 버전 배포", payload.decode("utf-8"))
@@ -240,7 +316,9 @@ class ApiTests(unittest.TestCase):
             header, body = bytes(connection.output).split(b"\r\n\r\n", 1)
             return int(header.split(b" ")[1]), header, body
 
-        self.assertEqual(200, request("GET", "/health")[0])
+        status, _, health = request("GET", "/health")
+        self.assertEqual(200, status)
+        self.assertIs(True, json.loads(health)["candidate_submission_idempotency"])
         status, headers, body = request("GET", "/admin")
         self.assertEqual(200, status)
         self.assertIn(b"text/html", headers)

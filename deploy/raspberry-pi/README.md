@@ -14,6 +14,27 @@ API 테스트 후 `/opt/sensorae-server`에 코드를 설치하고 `sensorae-ser
 
 기존 설치 경로가 있으면 덮어쓰지 않고 중단합니다. 이미 설치한 Pi에서 재실행할 필요는 없습니다. 설치 실패 시 남은 파일을 무작정 삭제하지 말고 출력과 서비스 로그를 먼저 확인하세요. 이 스크립트는 업데이트용이 아닙니다.
 
+## 기존 서버에 API-04·16 반영
+
+수정본을 Pi에 복사한 뒤 **그 저장소 루트에서** 먼저 `python3 -m unittest discover -s server -v`를 실행합니다. 이 시험은 임시 DB를 사용합니다. 다음 명령은 점검 시간을 잡고 운영 서버를 실제로 갱신할 때 사용합니다.
+
+```sh
+sudo sh -eu <<'SH'
+backup=$(mktemp -d /var/backups/sensorae-XXXXXXXX)
+echo "백업 경로: $backup"
+systemctl stop sensorae-server
+trap 'systemctl start sensorae-server' EXIT
+cp -a /var/lib/sensorae-server "$backup/data"
+cp -a /opt/sensorae-server "$backup/app"
+install -m 0644 server/api.py server/scan_windows.py server/admin.html /opt/sensorae-server/
+systemctl start sensorae-server
+trap - EXIT
+SH
+curl --fail http://127.0.0.1:8080/health
+```
+
+응답에서 `status`가 `ok`이고 `candidate_submission_idempotency`가 `true`인지 확인합니다. 시작 시 기존 DB에 제출 ID와 수신 창 테이블이 추가됩니다. 관리자 화면에서 갱신 전후의 관측 건수를 비교합니다. 앱에서 후보 제출과 수신 창 전송을 시험할 때는 시험 세션임을 설명에 표시합니다. 기기별 기존 토큰은 그대로 사용합니다.
+
 ## 앱과 관리 화면 연결
 
 - 서버 기본 주소: `http://<Pi의 IP>:8080`

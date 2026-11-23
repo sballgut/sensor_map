@@ -16,6 +16,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, unquote
 
+import scan_windows
+
 
 class ApiError(Exception):
     def __init__(self, status, message):
@@ -78,7 +80,7 @@ class Store:
         CREATE TABLE IF NOT EXISTS batches(batch_id TEXT PRIMARY KEY, request_hash TEXT NOT NULL,
           response TEXT NOT NULL, received_ms INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS candidates(candidate_id TEXT PRIMARY KEY, session_id TEXT NOT NULL,
-          status TEXT NOT NULL, payload TEXT NOT NULL, created_ms INTEGER NOT NULL);
+          status TEXT NOT NULL, payload TEXT NOT NULL, created_ms INTEGER NOT NULL, client_submission_id TEXT);
         CREATE TABLE IF NOT EXISTS reviews(id INTEGER PRIMARY KEY, candidate_id TEXT NOT NULL,
           old_status TEXT, new_status TEXT NOT NULL, reason TEXT NOT NULL, actor TEXT NOT NULL,
           at_ms INTEGER NOT NULL);
@@ -88,12 +90,25 @@ class Store:
         CREATE TABLE IF NOT EXISTS deployment_history(id INTEGER PRIMARY KEY, version TEXT NOT NULL,
           action TEXT NOT NULL, reason TEXT NOT NULL, at_ms INTEGER NOT NULL);
         """)
-        self.db.commit()
+        self.db.executescript(scan_windows.SCHEMA)
+        with self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in self.db.execute("PRAGMA table_info(candidates)")}
+            if "client_submission_id" not in columns:
+                self.db.execute("ALTER TABLE candidates ADD COLUMN client_submission_id TEXT")
+            self.db.execute("CREATE UNIQUE INDEX IF NOT EXISTS candidate_submission_id "
+                            "ON candidates(client_submission_id) WHERE client_submission_id IS NOT NULL")
 
     def close(self):
         self.db.close()
 
-    def batch(self, body):
+    def batch(self, body, *, windows=False):
+        if windows:
+            field, id_key = "windows", "window_id"
+            item_table, batch_table, validate = "scan_windows", "scan_window_batches", scan_windows.validate_window
+        else:
+            field, id_key = "records", "record_id"
+            item_table, batch_table, validate = "observations", "batches", validate_record
         if not isinstance(body, dict):
             raise ApiError(400, "object required")
         try:
@@ -101,36 +116,39 @@ class Store:
             request_hash = hashlib.sha256(canonical(body).encode()).hexdigest()
         except (ValueError, TypeError) as exc:
             raise ApiError(400, str(exc))
-        records = body.get("records")
+        records = body.get(field)
         if not isinstance(records, list) or not 1 <= len(records) <= 200:
-            raise ApiError(400, "records must contain 1..200 items")
+            raise ApiError(400, f"{field} must contain 1..200 items")
         with self.lock, self.db:
-            prior = self.db.execute("SELECT * FROM batches WHERE batch_id=?", (batch_id,)).fetchone()
+            self.db.execute("BEGIN IMMEDIATE")
+            prior = self.db.execute(f"SELECT * FROM {batch_table} WHERE batch_id=?", (batch_id,)).fetchone()
             if prior:
                 if prior["request_hash"] != request_hash:
                     raise ApiError(409, "batch_id reused with different content")
                 return json.loads(prior["response"])
             results = []
             for record in records:
-                rid = record.get("record_id") if isinstance(record, dict) else None
+                rid = record.get(id_key) if isinstance(record, dict) else None
                 try:
-                    validate_record(record)
+                    validate(record)
                     payload = canonical(record)
-                    existing = self.db.execute("SELECT payload FROM observations WHERE record_id=?", (rid,)).fetchone()
+                    existing = self.db.execute(f"SELECT payload FROM {item_table} WHERE {id_key}=?", (rid,)).fetchone()
                     if existing and existing[0] != payload:
-                        raise ValueError("record_id content conflict")
+                        raise ValueError(f"{id_key} content conflict")
                     if existing:
                         status = "duplicate"
                     else:
-                        self.db.execute("INSERT INTO observations VALUES(?,?,?,?,?)",
+                        self.db.execute(f"INSERT INTO {item_table}({id_key},session_id,device_id,payload,received_ms) "
+                                        "VALUES(?,?,?,?,?)",
                                         (rid, record["session_id"], record["device_id"], payload, now()))
                         status = "stored"
-                    results.append({"record_id": rid, "status": status})
+                    results.append({id_key: rid, "status": status})
                 except (ValueError, TypeError) as exc:
-                    results.append({"record_id": rid if isinstance(rid, str) else None,
+                    results.append({id_key: rid if isinstance(rid, str) else None,
                                     "status": "error", "error": str(exc)})
             response = {"batch_id": batch_id, "results": results}
-            self.db.execute("INSERT INTO batches VALUES(?,?,?,?)", (batch_id, request_hash, canonical(response), now()))
+            self.db.execute(f"INSERT INTO {batch_table}(batch_id,request_hash,response,received_ms) VALUES(?,?,?,?)",
+                            (batch_id, request_hash, canonical(response), now()))
             return response
 
     def candidate(self, body):
@@ -138,6 +156,9 @@ class Store:
             if not isinstance(body, dict) or body.get("consent") is not True:
                 raise ValueError("explicit recording consent is required")
             sid = text(body.get("session_id"), "session_id")
+            submission_id = None
+            if "client_submission_id" in body:
+                submission_id = text(body["client_submission_id"], "client_submission_id")
             text(body.get("description"), "description", 10000)
             ids = body.get("evidence_record_ids")
             if not isinstance(ids, list) or not 1 <= len(ids) <= 5000 or any(not isinstance(v, str) for v in ids):
@@ -152,6 +173,15 @@ class Store:
         except (TypeError, ValueError) as exc:
             raise ApiError(400, str(exc))
         with self.lock, self.db:
+            self.db.execute("BEGIN IMMEDIATE")
+            if submission_id is not None:
+                existing = self.db.execute(
+                    "SELECT candidate_id,status,payload FROM candidates WHERE client_submission_id=?",
+                    (submission_id,)).fetchone()
+                if existing:
+                    if existing["payload"] != payload:
+                        raise ApiError(409, "client_submission_id reused with different content")
+                    return {"candidate_id": existing["candidate_id"], "status": existing["status"]}
             for rid in set(ids):
                 row = self.db.execute("SELECT session_id,payload FROM observations WHERE record_id=?", (rid,)).fetchone()
                 if row is None or row[0] != sid:
@@ -159,10 +189,25 @@ class Store:
                 if json.loads(row[1]).get("candidate_consent") is not True:
                     raise ApiError(400, "each evidence record must have recording-time candidate consent")
             cid = str(uuid.uuid4())
-            self.db.execute("INSERT INTO candidates VALUES(?,?,?,?,?)", (cid, sid, "submitted", payload, now()))
+            self.db.execute("INSERT INTO candidates(candidate_id,session_id,status,payload,created_ms,client_submission_id) "
+                            "VALUES(?,?,?,?,?,?)", (cid, sid, "submitted", payload, now(), submission_id))
             self.db.execute("INSERT INTO reviews(candidate_id,old_status,new_status,reason,actor,at_ms) VALUES(?,?,?,?,?,?)",
                             (cid, None, "submitted", "consented submission", "app", now()))
             return {"candidate_id": cid, "status": "submitted"}
+
+    def observation_page(self, before=None):
+        where, args = "", ()
+        if before is not None:
+            if not before.isascii() or not before.isdigit() or len(before) > 19 or int(before) > 2**63-1:
+                raise ApiError(400, "invalid observation cursor")
+            where, args = "WHERE rowid < ?", (int(before),)
+        with self.lock:
+            rows = self.db.execute(
+                f"SELECT rowid, received_ms, payload FROM observations {where} ORDER BY rowid DESC LIMIT 51",
+                args).fetchall()
+            total = self.db.execute("SELECT COUNT(*) FROM observations").fetchone()[0]
+        return {"total": total, "next": str(rows[49][0]) if len(rows) > 50 else None,
+                "rows": [{"received_ms": row[1], "record": json.loads(row[2])} for row in rows[:50]]}
 
     def list_candidates(self):
         with self.lock:
@@ -171,7 +216,8 @@ class Store:
 
     def detail(self, cid):
         with self.lock:
-            row = self.db.execute("SELECT * FROM candidates WHERE candidate_id=?", (cid,)).fetchone()
+            row = self.db.execute("SELECT candidate_id,session_id,status,payload,created_ms FROM candidates WHERE candidate_id=?",
+                                  (cid,)).fetchone()
             if row is None:
                 raise ApiError(404, "candidate not found")
             result = dict(row)
@@ -291,11 +337,15 @@ class Application:
 
     def route(self, method, path, token=None, body=None):
         if method == "GET" and path == "/health":
-            return {"status": "ok"}
+            return {"status": "ok", "candidate_submission_idempotency": True}
         if method == "GET" and path == "/v1/releases/current":
             return self.store.current()
         if path.startswith("/v1/admin/"):
             self.authorize(token, True)
+            if method == "GET" and path == "/v1/admin/observations":
+                return self.store.observation_page()
+            if method == "GET" and path.startswith("/v1/admin/observations/before/"):
+                return self.store.observation_page(path.rsplit("/", 1)[1])
             if method == "GET" and path == "/v1/admin/candidates":
                 return {"candidates": self.store.list_candidates()}
             if path.startswith("/v1/admin/candidates/"):
@@ -312,6 +362,8 @@ class Application:
             self.authorize(token)
             if path == "/v1/observations/batch":
                 return self.store.batch(body)
+            if path == "/v1/scan-windows/batch":
+                return self.store.batch(body, windows=True)
             if path == "/v1/candidates":
                 return self.store.candidate(body)
         raise ApiError(404, "not found")

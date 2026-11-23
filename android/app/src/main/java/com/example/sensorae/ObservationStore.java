@@ -16,16 +16,28 @@ import java.util.List;
 import java.util.Set;
 
 /** Immutable raw observations + durable ACK state. Call from the app's worker executor. */
-public final class ObservationStore extends SQLiteOpenHelper {
+public final class ObservationStore extends SQLiteOpenHelper implements BatchUploader.Queue {
     private static final Gson GSON = new GsonBuilder().serializeNulls().create();
-    public ObservationStore(Context context) { super(context.getApplicationContext(), "sensor_ae.db", null, 1); }
+    public ObservationStore(Context context) { super(context.getApplicationContext(), "sensor_ae.db", null, 2); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE observations (record_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, utc_ms INTEGER NOT NULL, json TEXT NOT NULL, acknowledged INTEGER NOT NULL DEFAULT 0, last_attempt_ms INTEGER NOT NULL DEFAULT 0)");
         db.execSQL("CREATE INDEX observations_pending ON observations(acknowledged,utc_ms)");
         db.execSQL("CREATE INDEX observations_session ON observations(session_id,utc_ms)");
+        createSubmissions(db);
     }
     @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        throw new IllegalStateException("Explicit observation migration required");
+        if (oldVersion == 1 && newVersion == 2) createSubmissions(db);
+        else throw new IllegalStateException("Explicit observation migration required");
+    }
+    private static void createSubmissions(SQLiteDatabase db) {
+        db.execSQL("CREATE TABLE submissions (session_id TEXT PRIMARY KEY, server TEXT NOT NULL, " +
+                "body BLOB NOT NULL, state TEXT NOT NULL, detail TEXT NOT NULL)");
+    }
+    boolean hasPending(String sessionId) {
+        try (Cursor c = getReadableDatabase().rawQuery(
+                "SELECT 1 FROM observations WHERE session_id=? AND acknowledged=0 LIMIT 1", new String[]{sessionId})) {
+            return c.moveToFirst();
+        }
     }
     public void insert(Observation value) {
         if (value == null || value.record_id == null || value.session_id == null || value.device_id == null) throw new IllegalArgumentException("Missing record identity");
@@ -44,6 +56,17 @@ public final class ObservationStore extends SQLiteOpenHelper {
     public List<Observation> pending(int limit) { return query("acknowledged=0", null, "last_attempt_ms ASC,utc_ms ASC,rowid ASC", limit); }
     public List<Observation> recent(int limit) { return query(null, null, "utc_ms DESC,rowid DESC", limit); }
     public List<Observation> session(String sessionId) { return query("session_id=?", new String[]{sessionId}, "utc_ms ASC,rowid ASC", 0); }
+    List<String> consentedEvidence(String sessionId, int limit) {
+        List<String> ids = new ArrayList<>();
+        try (Cursor c = getReadableDatabase().query("observations", new String[]{"json"}, "session_id=?",
+                new String[]{sessionId}, null, null, "utc_ms ASC,rowid ASC")) {
+            while (ids.size() < limit && c.moveToNext()) {
+                Observation o = GSON.fromJson(c.getString(0), Observation.class);
+                if (o.candidate_consent) ids.add(o.record_id);
+            }
+        }
+        return ids;
+    }
     private List<Observation> query(String where, String[] args, String order, int limit) {
         List<Observation> result = new ArrayList<>();
         try (Cursor cursor = getReadableDatabase().query("observations", new String[]{"json"}, where, args, null, null, order, limit > 0 ? Integer.toString(limit) : null)) {
@@ -85,7 +108,7 @@ public final class ObservationStore extends SQLiteOpenHelper {
         }
         writer.flush();
     }
-    private static String csv(Object value) {
+    static String csv(Object value) {
         String text = value == null ? "" : value.toString();
         if (value instanceof String && !text.isEmpty() && "=+-@\t\r".indexOf(text.charAt(0)) >= 0) text = "'" + text;
         return "\"" + text.replace("\"", "\"\"") + "\"";

@@ -1,14 +1,48 @@
 <!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>SensorAE 후보 검토</title>
-<style>body{font:16px system-ui;max-width:980px;margin:40px auto;padding:0 20px;background:#f5f7fa;color:#183048}input,button,textarea{font:inherit;padding:10px;margin:5px;border:1px solid #bbc7d5;border-radius:6px}button{cursor:pointer;background:#fff}section{background:white;padding:20px;margin:20px 0;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}input{max-width:90%}.row{display:flex;flex-wrap:wrap;gap:6px}#list button{display:block;text-align:left;width:100%}</style>
-<h1>후보 검토와 버전 배포</h1><p>공용 센서 서버와 별도로 실행하는 팀 서버 관리 화면입니다.</p>
+<title>SensorAE 서버 관리</title>
+<style>body{font:16px system-ui;max-width:980px;margin:40px auto;padding:0 20px;background:#f5f7fa;color:#183048}input,button,textarea{font:inherit;padding:10px;margin:5px;border:1px solid #bbc7d5;border-radius:6px}button{cursor:pointer;background:#fff}section{background:white;padding:20px;margin:20px 0;border-radius:12px}pre{white-space:pre-wrap;overflow-wrap:anywhere}label{display:block}input{max-width:90%}.row{display:flex;flex-wrap:wrap;gap:6px}#list button{display:block;text-align:left;width:100%}table{border-collapse:collapse;white-space:nowrap}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}button:disabled{opacity:.5}</style>
+<h1>SensorAE 서버 관리</h1><p>공용 센서 서버와 별도로 실행하는 팀 서버 관리 화면입니다.</p>
 <section><label>관리자 토큰 <input id="token" type="password" autocomplete="off"></label><button id="load">후보 목록 불러오기</button><p id="message" role="status"></p></section>
-<section><h2>후보 목록</h2><div id="list"></div><h2>선택 후보의 근거·사진 참조·검토 이력</h2><pre id="detail">후보를 선택하세요.</pre><label>검토 사유 <textarea id="reason" rows="2"></textarea></label><div class="row" id="actions"></div></section>
+<section><h2>수집 데이터</h2><button id="latest">최근 수집 데이터 조회</button><button id="older" disabled>이전 기록</button>
+<p id="obsStatus" role="status">관리자 토큰을 입력하고 조회하세요.</p>
+<div style="overflow-x:auto"><table><thead><tr><th>서버 수신 시각</th><th>앱 수집 시각</th><th>센서</th><th>기준 지점</th><th>RSSI (dBm)</th><th>온도 (°C)</th><th>습도 (%)</th><th>AQI</th><th>TVOC</th><th>CO₂</th></tr></thead><tbody id="records"></tbody></table></div></section>
+<section><h2>후보 검토와 버전 배포</h2><h3>후보 목록</h3><div id="list"></div><h2>선택 후보의 근거·사진 참조·검토 이력</h2><pre id="detail">후보를 선택하세요.</pre><label>검토 사유 <textarea id="reason" rows="2"></textarea></label><div class="row" id="actions"></div></section>
 <section><h2>준비된 패키지 배포</h2><p>B·C가 제공한 map.json, graph.json, destinations.json, model.json 네 파일이 서버 PC의 폴더에 있어야 합니다. JSON 문법과 해시를 검사하며, 실제 보행 가능 여부·모델 품질은 검토자가 확인해야 합니다.</p><label>버전 <input id="version" placeholder="2026-11-24-v1"></label><label>서버 PC의 원본 폴더 <input id="source" size="60"></label><label>승인 후보 ID (쉼표로 구분, 후보 없는 최초 패키지는 빈칸) <input id="candidates" size="60"></label><button id="publish">새 버전 발행</button><h2>이전 버전 복구</h2><label>복구할 버전 <input id="rollbackVersion"></label><label>사유 <input id="rollbackReason" size="60"></label><button id="rollback">기존 버전으로 복구</button><pre id="release"></pre><p>이미 발행된 후보의 철회는 검토 상태만 바꿉니다. 실제 경로에서 제거하려면 수정 패키지를 발행하거나 적절한 이전 버전으로 복구해야 합니다.</p></section>
 <script>
 let selected=null;const el=id=>document.getElementById(id);
 async function request(path,body){const r=await fetch(path,{method:body?'POST':'GET',headers:{'Authorization':'Bearer '+el('token').value,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});const value=await r.json();if(!r.ok)throw Error(value.error||r.status);return value}
 async function act(fn){try{el('message').textContent='처리 중';await fn();el('message').textContent='완료'}catch(e){el('message').textContent=e.message}}
+let nextPage=null, shown=0;
+const time=ms=>ms==null?'—':new Date(ms).toLocaleString('ko-KR');
+async function observations(older){
+    el('latest').disabled=true;
+    el('older').disabled=true;
+    el('obsStatus').textContent='조회 중…';
+    try{
+        const path='/v1/admin/observations'+(older?'/before/'+nextPage:'');
+        const data=await request(path);
+        const body=el('records');
+        body.replaceChildren();
+        for(const {received_ms,record:r} of data.rows){
+            const row=body.insertRow();
+            for(const value of [time(received_ms),time(r.utc_ms),r.sensor_id||r.advertised_name||r.mac,r.reference_point_id,r.rssi,r.temperature,r.humidity,r.aqi,r.tvoc,r.co2]){
+                row.insertCell().textContent=value==null||value===''?'—':value;
+            }
+        }
+        if(!older)shown=0;
+        const first=shown+1;
+        shown+=data.rows.length;
+        el('obsStatus').textContent=data.rows.length ? '전체 '+data.total+'건 · '+first+'–'+shown+'번째 기록' : '저장된 수집 기록이 없습니다.';
+        nextPage=data.next;
+    }catch(error){
+        nextPage=null;el('records').replaceChildren();
+        el('obsStatus').textContent='조회 실패 · '+(error.message==='unauthorized'?'관리자 토큰을 확인하세요.':error.message);
+    }finally{
+        el('latest').disabled=false;el('older').disabled=!nextPage;
+    }
+}
+el('latest').onclick=()=>observations(false);
+el('older').onclick=()=>observations(true);
 async function list(){const data=await request('/v1/admin/candidates');el('list').replaceChildren();for(const item of data.candidates){const button=document.createElement('button');button.textContent=item.status+' · '+item.session_id+' · '+item.candidate_id;button.onclick=()=>act(()=>detail(item.candidate_id));el('list').append(button)}}
 async function detail(id){selected=id;const data=await request('/v1/admin/candidates/'+encodeURIComponent(id));el('detail').textContent=JSON.stringify(data,null,2);el('actions').replaceChildren();const actions={submitted:['under_review','withdrawn'],under_review:['approved','rejected','withdrawn'],approved:['withdrawn'],rejected:['under_review','withdrawn'],published:['withdrawn'],withdrawn:[]};for(const state of actions[data.status]||[]){const button=document.createElement('button');button.textContent={under_review:'검토 시작',approved:'승인',rejected:'거절',withdrawn:'철회'}[state];button.onclick=()=>act(async()=>{await request('/v1/admin/candidates/'+encodeURIComponent(selected),{status:state,reason:el('reason').value});await detail(selected);await list()});el('actions').append(button)}}
 el('load').onclick=()=>act(list);

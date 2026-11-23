@@ -8,11 +8,8 @@ import android.net.Uri;
 import android.os.*;
 import android.view.*;
 import android.widget.*;
-import com.google.gson.*;
 import com.example.sensorae.ui.d1.DestinationHomeView;
 import java.io.*;
-import java.net.*;
-import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.*;
 
@@ -22,7 +19,9 @@ public final class MainActivity extends Activity {
     private ExecutorService io,network,inference;
     public TeamBridge bridge;
     private CollectionEngine engine;
-    private final Gson gson=new Gson();
+    private CandidateClient candidates;
+    private long nextQueuedAttempt;
+    private boolean checkingQueue;
     private ObservationStore store;
     private PublicApi publicApi;
     private ReleaseInstaller releases;
@@ -41,6 +40,7 @@ public final class MainActivity extends Activity {
     private final Runnable statusTick=new Runnable(){public void run(){
         if(destroyed)return;
         updateControls();
+        retryQueuedWhenDue();
         if(!replaying)summary.setText(engine.status());
         logView.setText(engine.diagnostics());
         main.postDelayed(this,2000);
@@ -56,6 +56,8 @@ public final class MainActivity extends Activity {
         store=engine.store;releases=engine.releases;bridge=engine.bridge;
         io=engine.io;network=engine.network;inference=engine.inference;
         publicApi=new PublicApi(this);
+        candidates=new CandidateClient(store,getFilesDir());
+        if (state != null) exportKind = state.getInt("exportKind", 0);
         buildUi();
         destinationHome.restoreSelection(state);
         if(engine.running||getIntent().getBooleanExtra("show_collection",false))screens.setDisplayedChild(1);
@@ -87,10 +89,12 @@ public final class MainActivity extends Activity {
         button(box,"서버 설정 저장",()->{prefs.edit().putString("server_url",url.getText().toString().trim()).putString("server_token",token.getText().toString().trim()).putString("declination",declination.getText().toString()).apply();note("서버 설정 저장 완료");});
         button(box,"대기 관측 배치 전송",()->{if(serverPermission(true))sync();});
         button(box,"관측 CSV 내보내기",()->export(1));
+        button(box,"수신 창 CSV 내보내기",()->export(3));
         button(box,"후보 추정 JSONL 내보내기",()->export(2));
         button(box,"마지막 세션 재생",()->replay());
         description=field(box,"후보 설명 (B의 추정이 없으면 관측 세션 근거만 제출)","");
-        button(box,"동의한 세션 후보 제출",()->submitCandidate());
+        button(box,"동의한 세션 후보 제출",this::submitCandidate);
+        button(box,"저장한 후보 · 상태 확인 및 재전송",this::showSubmissions);
         button(box,"지도·그래프·모델 업데이트",()->{if(!serverPermission(true))return;String base=url.getText().toString().trim();network.execute(()->{try{note("업데이트 완료 · "+releases.install(base));}catch(Exception e){note("업데이트 실패 · 기존 버전 유지 · "+safe(e));}});});
         button(box,"이전 패키지로 복구",()->network.execute(()->{try{note("이전 버전 복구 · "+releases.rollback());}catch(Exception e){note("복구 실패 · "+safe(e));}}));
         logView=new TextView(this);box.addView(logView);
@@ -145,30 +149,106 @@ public final class MainActivity extends Activity {
     }
     private void replay(){String id=prefs.getString("last_session",null);if(id==null){note("저장된 세션이 없습니다.");return;}io.execute(()->{try{List<Observation> rows=store.session(id);main.post(()->{if(engine.running){note("수집을 중지한 뒤 재생하세요.");return;}long current=++generation;inference.execute(()->{if(!destroyed&&current==generation)bridge.clear();});replaying=true;note("재생 시작 · "+rows.size()+"건 · 실제 전송/재저장 없음");replayRows(rows,0,current);});}catch(Exception e){note("재생 오류 · "+safe(e));}});}
     private void replayRows(List<Observation> rows,int i,long current){if(destroyed||current!=generation||engine.running)return;if(i>=rows.size()){replaying=false;note("재생 완료");return;}Observation o=rows.get(i);inference.execute(()->{if(!destroyed&&current==generation)bridge.accept(o);});summary.setText("재생 "+(i+1)+"/"+rows.size()+"\n"+o.sensor_id+" RSSI "+o.rssi+" · "+o.parse_status);long delay=i+1<rows.size()?Math.min(2000,Math.max(10,(rows.get(i+1).elapsed_ns-o.elapsed_ns)/1_000_000)):10;main.postDelayed(()->replayRows(rows,i+1,current),delay);}
-    private void submitCandidate(){
-        if(engine.sessionId==null||!engine.sessionConsent){note("후보 기록에 동의하고 수집한 세션이 필요합니다.");return;}
-        final String sid=engine.sessionId,base=url.getText().toString().trim(),key=token.getText().toString().trim(),desc=description.getText().toString().trim();
-        if(base.isEmpty()||key.isEmpty()||desc.isEmpty()){note("서버 설정과 후보 설명을 입력하세요.");return;}
-        if(!serverPermission(true))return;
-        network.execute(()->{try{List<Observation> observations=store.session(sid);JsonArray ids=new JsonArray();for(int i=0;i<Math.min(5000,observations.size());i++)if(observations.get(i).candidate_consent)ids.add(observations.get(i).record_id);if(ids.size()==0)throw new IOException("동의한 관측 없음");
-            JsonObject body=new JsonObject();body.addProperty("consent",true);body.addProperty("session_id",sid);body.addProperty("description",desc);body.add("evidence_record_ids",ids);
-            JsonArray estimates=new JsonArray();File positionFile=new File(getFilesDir(),"candidate_positions.jsonl");
-            if(positionFile.exists())try(BufferedReader reader=new BufferedReader(new InputStreamReader(new FileInputStream(positionFile),StandardCharsets.UTF_8))){String line;while((line=reader.readLine())!=null&&estimates.size()<5000){try{JsonObject obj=JsonParser.parseString(line).getAsJsonObject();if(obj.has("session_id")&&sid.equals(obj.get("session_id").getAsString()))estimates.add(obj);}catch(RuntimeException ignored){}}}
-            body.add("position_estimates",estimates);
-            URL endpoint=new URL(base.replaceAll("/+$","")+"/v1/candidates");if(!endpoint.getProtocol().matches("https?"))throw new IOException("HTTP(S) 주소 필요");
-            HttpURLConnection c=(HttpURLConnection)endpoint.openConnection();try{c.setConnectTimeout(10000);c.setReadTimeout(15000);c.setInstanceFollowRedirects(false);c.setRequestMethod("POST");c.setRequestProperty("Authorization","Bearer "+key);c.setRequestProperty("Content-Type","application/json");c.setDoOutput(true);try(OutputStream out=c.getOutputStream()){out.write(gson.toJson(body).getBytes(StandardCharsets.UTF_8));}int status=c.getResponseCode();try(InputStream in=status<400?c.getInputStream():c.getErrorStream()){String response=in==null?"":PublicApi.readLimited(in,2*1024*1024);note("후보 제출 HTTP "+status+" · "+response);}}finally{c.disconnect();}
-        }catch(Exception e){note("후보 제출 실패 · 먼저 관측 배치를 전송하고 다시 시도하세요 · "+safe(e));}});
+    private void submitCandidate() {
+        if (engine.running) { note("수집을 중지한 뒤 후보를 제출하세요."); return; }
+        String session = prefs.getString("last_session", null);
+        if (session == null) { note("저장된 세션이 없습니다."); return; }
+        String address = url.getText().toString().trim();
+        String key = token.getText().toString().trim();
+        String text = description.getText().toString().trim();
+        boolean allowed = serverPermission(true);
+        // Flush queued observation/position writes before freezing this stopped session.
+        io.execute(() -> network.execute(() -> {
+            try {
+                String base = CandidateClient.baseUrl(address);
+                CandidateClient.Entry entry = candidates.prepare(session, base, text);
+                note(entry.label());
+                if (allowed && CandidateClient.QUEUED.equals(entry.state))
+                    note(candidates.send(entry, base, key, false).label());
+            } catch (Exception e) { note("후보 제출 확인 · " + safe(e)); }
+        }));
+    }
+    private void showSubmissions() {
+        network.execute(() -> {
+            try {
+                List<CandidateClient.Entry> rows = candidates.entries(null);
+                main.post(() -> {
+                    if (destroyed) return;
+                    if (rows.isEmpty()) { note("저장한 후보가 없습니다."); return; }
+                    String[] labels = new String[rows.size()];
+                    for (int i = 0; i < labels.length; i++) labels[i] = rows.get(i).label();
+                    new AlertDialog.Builder(this).setTitle("저장한 후보").setItems(labels, (d, i) -> {
+                        CandidateClient.Entry selected = rows.get(i);
+                        if (CandidateClient.SUBMITTED.equals(selected.state)) { note(selected.label()); return; }
+                        new AlertDialog.Builder(this).setTitle("저장된 내용으로 전송")
+                                .setMessage(selected.label()).setNegativeButton("닫기", null)
+                                .setPositiveButton("전송", (dialog, button) -> retrySubmission(selected)).show();
+                    }).show();
+                });
+            } catch (Exception e) { note("후보 목록 확인 실패 · " + safe(e)); }
+        });
+    }
+    private void retrySubmission(CandidateClient.Entry entry) {
+        if (!serverPermission(true)) return;
+        String address = url.getText().toString().trim();
+        String key = token.getText().toString().trim();
+        network.execute(() -> {
+            try { note(candidates.send(entry, CandidateClient.baseUrl(address), key, true).label()); }
+            catch (Exception e) { note("저장한 후보 상태를 확인하세요 · " + safe(e)); }
+        });
+    }
+    private void retryQueuedWhenDue() {
+        long now = SystemClock.elapsedRealtime();
+        if (checkingQueue || now < nextQueuedAttempt) return;
+        nextQueuedAttempt = now + 30_000;
+        String address = url.getText().toString().trim();
+        String key = token.getText().toString().trim();
+        if (address.isEmpty() || key.isEmpty() || !serverPermission(false)) return;
+        checkingQueue = true;
+        network.execute(() -> {
+            try {
+                String base = CandidateClient.baseUrl(address);
+                for (CandidateClient.Entry entry : candidates.entries("state=? AND server=?", CandidateClient.QUEUED, base)) {
+                    CandidateClient.Entry result = candidates.send(entry, base, key, false);
+                    if (!entry.state.equals(result.state) || !entry.detail.equals(result.detail)) note(result.label());
+                }
+            } catch (Exception e) {
+                note("후보 자동 확인 · " + safe(e));
+            } finally { main.post(() -> checkingQueue = false); }
+        });
     }
     private boolean serverPermission(boolean request){
         if(Build.VERSION.SDK_INT<37||checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK")==PackageManager.PERMISSION_GRANTED)return true;
         if(request){note("같은 Wi-Fi의 E 서버 연결을 허용한 뒤 해당 버튼을 다시 누르세요.");requestPermissions(new String[]{"android.permission.ACCESS_LOCAL_NETWORK"},101);}
         return false;
     }
-    private void export(int kind){exportKind=kind;startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType(kind==1?"text/csv":"application/octet-stream").putExtra(Intent.EXTRA_TITLE,kind==1?"observations.csv":"candidate_positions.jsonl"),200);}
-    @Override protected void onActivityResult(int r,int result,Intent data){super.onActivityResult(r,result,data);if(r==200&&result==RESULT_OK&&data!=null&&data.getData()!=null){Uri uri=data.getData();int kind=exportKind;io.execute(()->{try(OutputStream out=getContentResolver().openOutputStream(uri)){if(out==null)throw new IOException("저장 위치 열기 실패");if(kind==1)store.exportCsv(out);else{File f=new File(getFilesDir(),"candidate_positions.jsonl");if(f.exists())try(InputStream in=new FileInputStream(f)){byte[] b=new byte[8192];int n;while((n=in.read(b))!=-1)out.write(b,0,n);}}note("내보내기 완료");}catch(Exception e){note("내보내기 실패 · "+safe(e));}});}}
+    private void export(int kind) {
+        exportKind = kind;
+        String name = kind == 1 ? "observations.csv" : kind == 3 ? "scan_windows.csv" : "candidate_positions.jsonl";
+        startActivityForResult(new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                .setType(kind == 2 ? "application/octet-stream" : "text/csv").putExtra(Intent.EXTRA_TITLE, name), 200);
+    }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request,result,data);
+        if (request != 200 || result != RESULT_OK || data == null || data.getData() == null) return;
+        Uri uri = data.getData();
+        int kind = exportKind;
+        io.execute(() -> {
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out == null) throw new IOException("저장 위치 열기 실패");
+                if (kind == 1) store.exportCsv(out);
+                else if (kind == 3) engine.windowStore.exportCsv(out);
+                else {
+                    File file = new File(getFilesDir(), "candidate_positions.jsonl");
+                    if (file.exists()) java.nio.file.Files.copy(file.toPath(), out);
+                }
+                note("내보내기 완료");
+            } catch (Exception e) { note("내보내기 실패 · " + safe(e)); }
+        });
+    }
     private String safe(Exception e){return e.getClass().getSimpleName()+": "+(e.getMessage()==null?"":e.getMessage());}
     private void note(String text){engine.note(text);main.post(()->{if(!destroyed&&logView!=null)logView.setText(engine.diagnostics());});}
-    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);if(destinationHome!=null)destinationHome.saveSelection(state);if(screens!=null)state.putBoolean("d1.collection",screens.getDisplayedChild()==1);}
+    @Override protected void onSaveInstanceState(Bundle state){super.onSaveInstanceState(state);state.putInt("exportKind",exportKind);if(destinationHome!=null)destinationHome.saveSelection(state);if(screens!=null)state.putBoolean("d1.collection",screens.getDisplayedChild()==1);}
     @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);if(intent.getBooleanExtra("show_collection",false))screens.setDisplayedChild(1);}
     @Override protected void onStart(){super.onStart();main.removeCallbacks(statusTick);main.post(statusTick);}
     @Override protected void onStop(){main.removeCallbacks(statusTick);replaying=false;generation++;super.onStop();}

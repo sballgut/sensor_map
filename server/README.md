@@ -64,6 +64,30 @@ python api.py --host 127.0.0.1 --port 8080 --data data
 - 같은 batch_id의 내용을 바꾸면 HTTP 409입니다. 오류를 수정해 다시 보낼 때는 새 배치 ID를 사용하세요. 이미 저장된 record_id의 측정 내용은 바꿀 수 없습니다.
 - 클라이언트는 자기 배치에 속한 record_id 중 stored/duplicate로 명시된 것만 완료 처리해야 합니다.
 
+### 수신 창 전송 (API-16)
+
+앱은 수집·비교 모드에서 10초마다 표본을 별도 SQLite 대기열에 넣습니다. 관측이 없더라도 정상 스캔 중이었다면 `packet_count: 0`인 표본이 생깁니다. 스캔 시간은 앱에서 스캔을 시작·정지한 단조 시각으로 계산합니다. OS가 내부적으로 BLE 수신을 제한한 시간은 이 값으로 구별할 수 없습니다.
+
+앱 토큰으로 `POST /v1/scan-windows/batch`에 다음 형식으로 보냅니다. 아래 값은 시험용입니다.
+
+```json
+{
+  "batch_id": "batch-example-1",
+  "windows": [{
+    "window_id": "window-example-1", "session_id": "session-example", "device_id": "device-example",
+    "mode": "collection", "start_utc_ms": 1795400010000, "end_utc_ms": 1795400020000,
+    "start_elapsed_ns": 5133000000000, "end_elapsed_ns": 5143000000000, "scan_active_ms": 10000,
+    "packet_count": 0, "sensor_counts": {}, "gps_lat": null, "gps_lon": null,
+    "gps_accuracy": null, "gps_age_ms": null, "interruption": "none"
+  }]
+}
+```
+
+- 모드는 `collection`, `evaluation`을 허용합니다. 안내 모드의 표본은 해당 행에 오류를 반환합니다.
+- 표본 길이는 단조 시각 기준 10초입니다. 스캔을 다시 시작한 구간은 `scan_restart`로, 세션이 도중에 끝난 마지막 창은 중단 사유와 실제 활성 시간으로 기록합니다. 센서 식별에 실패한 패킷도 총수에 포함되므로 센서별 합이 총수보다 작을 수 있습니다.
+- 폰은 창 끝 시각 기준 30초 이내, 정확도 100m 이내인 최근 위치에 `gps_age_ms`를 붙입니다. 위치가 없으면 GPS 값은 null입니다. 이 기준은 자료 보관용입니다. 수신 구역의 최소 표본 수와 공간 단위는 팀 합의 후 적용합니다.
+- 한 묶음은 1~200개입니다. 응답의 `results`에는 `window_id`와 `stored`, `duplicate`, `error` 중 하나가 담깁니다. 앱은 자신이 보낸 창의 저장·중복 응답만 완료로 표시합니다. 서버 버전이 낮아 404가 돌아와도 폰의 대기열과 수신 창 CSV는 유지됩니다.
+
 ### 후보 제출
 
 `POST /v1/candidates`, APP_TOKEN 필요.
@@ -71,6 +95,7 @@ python api.py --host 127.0.0.1 --port 8080 --data data
 ```json
 {
   "consent": true,
+  "client_submission_id": "631f3e6e-82f9-4b7f-b31a-7d8492864e23",
   "session_id": "수집-세션-UUID",
   "description": "새 보행로로 추정되는 구간과 현장 설명",
   "evidence_record_ids": ["서버에-저장된-관측-UUID"],
@@ -80,6 +105,10 @@ python api.py --host 127.0.0.1 --port 8080 --data data
 ```
 
 응답은 `{candidate_id,status:"submitted"}`입니다. 명시적 동의가 필요하며 모든 근거 레코드는 서버에 존재하고 같은 session_id이며 관측 당시 `candidate_consent:true`여야 합니다. 제출 시에만 동의했다고 과거 비동의 기록을 근거로 사용할 수 없습니다. position_estimates는 최대 5,000개 객체, photo_refs는 최대 50개 문자열 참조(각 2,048자)를 허용합니다. NaN/Infinity는 허용하지 않습니다. 사진 바이너리 업로드·보관 및 지도상 미리보기는 이 뼈대에 포함하지 않았습니다. 위치 추정·불확실성은 B가 실제 생성한 값을 연결해야 하며 서버가 임의로 만들지 않습니다.
+
+새 앱은 세션 후보를 처음 제출할 때 UUID와 본문을 폰에 함께 저장합니다. 수집을 끝내고 그 세션의 모든 관측에 저장·중복 응답을 받은 뒤 전송합니다. `GET /health`의 `candidate_submission_idempotency`가 `true`면 서버가 이 방식을 지원합니다. 서버가 먼저 업데이트되어 있어야 합니다.
+
+같은 ID와 같은 내용으로 재요청하면 처음의 `candidate_id`와 현재 검토 상태가 반환됩니다. 같은 ID에 다른 내용을 보내면 409입니다. ID를 생략하는 기존 앱의 요청은 매번 새 후보를 만듭니다. 새 앱에서 POST 후 응답을 받지 못하면 ‘결과 모름’으로 보관하며, 저장한 후보를 선택해 같은 내용으로 다시 전송할 수 있습니다.
 
 ### 후보 검토
 
@@ -142,7 +171,7 @@ source_dir는 **서버 PC**의 폴더이며 다음 네 파일이 필요합니다
 python -m unittest -v
 ```
 
-17개 테스트가 포함되어 있고 모두 통과했습니다. 실제 localhost 연결 시험도 네트워크 권한 허용 후 통과했습니다. 레코드/배치 멱등성, 내용 충돌, 부분 ACK, 파싱 실패 RSSI 보존, 안내 모드 GPS 좌표·메타데이터 차단, DB 재시작, 관측 당시 동의와 근거 검사, 추정값 유효성, 관리자 권한, 상태 전이, 패키지 해시/발행/실패/롤백/철회 이력을 검사합니다.
+계약 시험은 임시 DB에서 일반 관측 저장·중복 처리, 동의 세션 제출·검토·승인과 비동의 제출 거부를 확인합니다. 후보의 동시 재전송·기존 DB 마이그레이션, 수신 창의 개별 응답과 빈 창 저장도 검사합니다.
 
 API 로직 시험은 실제 임시 SQLite/파일을 사용합니다. HTTP 처리기는 메모리 스트림을 통해 실제 HTTP 요청 프레임을 파싱해 health, admin HTML, 인증 거부, 배치 저장/중복 ACK, 후보 제출·상세 응답을 확인했습니다. 별도의 루프백 시험은 127.0.0.1의 임시 포트로 서버를 띄워 같은 흐름을 검증하며, 실행 환경이 소켓 접근을 명시적으로 거부할 때만 skip합니다. 실제 휴대폰 HTTP 연결, 운영 서버 배포, 브라우저 화면 시각 검증은 별도 수행해야 합니다.
 

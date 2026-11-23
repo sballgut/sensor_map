@@ -32,6 +32,8 @@ final class CollectionEngine {
     final ExecutorService inference=Executors.newSingleThreadExecutor();
     final TeamBridge bridge=new TeamBridge();
     final ObservationStore store;
+    final ScanWindowStore windowStore;
+    private ScanWindowRecorder windows;
     final ReleaseInstaller releases;
     final SharedPreferences prefs;
     private final Gson gson=new Gson();
@@ -49,7 +51,7 @@ final class CollectionEngine {
         @Override public void onReceive(Context context,Intent intent){
             int state=intent.getIntExtra(BluetoothAdapter.EXTRA_STATE,BluetoothAdapter.ERROR);
             if(running&&(state==BluetoothAdapter.STATE_TURNING_OFF||state==BluetoothAdapter.STATE_OFF)){
-                note("Bluetooth가 꺼져 수집을 중지했습니다. Bluetooth를 켠 뒤 다시 시작하세요.");stop();
+                note("Bluetooth가 꺼져 수집을 중지했습니다. Bluetooth를 켠 뒤 다시 시작하세요.");stop("bluetooth_off");
             }
         }
     };
@@ -72,7 +74,7 @@ final class CollectionEngine {
         String id=prefs.getString("device_id",null);
         if(id==null){id=UUID.randomUUID().toString();prefs.edit().putString("device_id",id).apply();}
         deviceId=id;
-        store=new ObservationStore(app);releases=new ReleaseInstaller(app);
+        store=new ObservationStore(app);windowStore=new ScanWindowStore(app);releases=new ReleaseInstaller(app);
         locations=(LocationManager)app.getSystemService(Context.LOCATION_SERVICE);
         WindowManager windows=(WindowManager)app.getSystemService(Context.WINDOW_SERVICE);
         heading=new HeadingTracker(app,v->{headingState=v;long at=generation;
@@ -107,6 +109,14 @@ final class CollectionEngine {
             if(activeMode.equals("guidance"))releases.pinForGuidance();else requestGps();
             heading.start(correction);
             startScan();
+            if (!activeMode.equals("guidance")) {
+                windows = new ScanWindowRecorder(sessionId, deviceId, activeMode, SystemClock.elapsedRealtimeNanos(),
+                        System.currentTimeMillis(), window -> io.execute(() -> {
+                            try { windowStore.insert(window); }
+                            catch (RuntimeException e) { note("수신 창 저장 실패 · " + safe(e)); }
+                        }));
+                main.postDelayed(windowTick, 10_000);
+            }
             main.postDelayed(refreshScan,240_000);
             main.post(uploadTick);
             note("백그라운드 수집 시작 · "+activeMode+" · "+sessionId);
@@ -129,13 +139,21 @@ final class CollectionEngine {
     // Refresh before the long-running scan timeout; never restart on every missing packet.
     private final Runnable refreshScan=new Runnable(){public void run(){
         if(!running)return;
+        if(windows!=null) windows.setPause(SystemClock.elapsedRealtimeNanos(),"scan_restart");
         stopScan();main.postDelayed(resumeScan,1000);
     }};
     private final Runnable resumeScan=new Runnable(){public void run(){
         if(!running)return;
-        try{startScan();main.postDelayed(refreshScan,240_000);}
-        catch(RuntimeException error){note("BLE 재시작 실패 · "+safe(error));stop();}
+        try{startScan();if(windows!=null)windows.setPause(SystemClock.elapsedRealtimeNanos(),null);main.postDelayed(refreshScan,240_000);}
+        catch(RuntimeException error){note("BLE 재시작 실패 · "+safe(error));stop(error instanceof SecurityException?"permission_denied":"service_stopped");}
     }};
+    private final Runnable windowTick = new Runnable() {
+        public void run() {
+            if (windows == null) return;
+            windows.advance(SystemClock.elapsedRealtimeNanos());
+            main.postDelayed(this, 10_000);
+        }
+    };
     private final Runnable uploadTick=new Runnable(){public void run(){
         if(!running)return;
         sync(prefs.getString("server_url",""),prefs.getString("server_token",""));
@@ -144,7 +162,12 @@ final class CollectionEngine {
 
     private void requestGps(){
         if(activeMode.equals("guidance")||locations==null)return;
-        locationListener=new LocationListener(){public void onLocationChanged(Location l){if(running&&!activeMode.equals("guidance"))latestLocation=new Location(l);}public void onProviderEnabled(String s){}public void onProviderDisabled(String s){}public void onStatusChanged(String s,int st,Bundle b){}};
+        locationListener=new LocationListener(){public void onLocationChanged(Location l){
+            if(!running || this!=locationListener || activeMode.equals("guidance"))return;
+            latestLocation=new Location(l);
+            if(windows!=null && l.hasAccuracy())windows.fix(SystemClock.elapsedRealtimeNanos(),l.getElapsedRealtimeNanos(),
+                    l.getLatitude(),l.getLongitude(),l.getAccuracy());
+        }public void onProviderEnabled(String s){}public void onProviderDisabled(String s){}public void onStatusChanged(String s,int st,Bundle b){}};
         for(String provider:new String[]{LocationManager.GPS_PROVIDER,LocationManager.NETWORK_PROVIDER})try{if(locations.isProviderEnabled(provider)){gpsRequests++;locations.requestLocationUpdates(provider,2000,0,locationListener,Looper.getMainLooper());}}catch(SecurityException|IllegalArgumentException ex){note("GPS 라벨 요청 실패 · "+safe(ex));}
     }
     private void receive(long current,ScanResult result){
@@ -156,6 +179,7 @@ final class CollectionEngine {
         o.reference_point_id=referencePoint;o.advertised_name=record.getDeviceName();
         try{o.mac=result.getDevice().getAddress();}catch(SecurityException ex){o.mac="";}
         o.rssi=result.getRssi();PacketParser.parse(o.advertised_name,raw).applyTo(o);
+        if(windows!=null)windows.packet(o.elapsed_ns,o.sensor_id);
         if(!activeMode.equals("guidance")&&latestLocation!=null){long age=(SystemClock.elapsedRealtimeNanos()-latestLocation.getElapsedRealtimeNanos())/1_000_000;
             if(age>=0&&age<=30_000&&latestLocation.hasAccuracy()&&latestLocation.getAccuracy()<=100){o.gps_lat=latestLocation.getLatitude();o.gps_lon=latestLocation.getLongitude();o.gps_accuracy=(double)latestLocation.getAccuracy();o.gps_age_ms=age;}}
         if(headingState!=null && o.elapsed_ns-headingState.elapsedNs<=2_000_000_000L){o.heading_deg=headingState.degrees;o.heading_accuracy=headingState.accuracy;o.heading_source=headingState.source;o.fixed_declination_deg=headingState.fixedDeclination;}
@@ -165,7 +189,15 @@ final class CollectionEngine {
     }
 
     void stop() {
+        stop("service_stopped");
+    }
+    private void stop(String reason) {
         boolean wasRunning=running;
+        main.removeCallbacks(windowTick);
+        if (windows != null) {
+            windows.stop(SystemClock.elapsedRealtimeNanos(), reason);
+            windows = null;
+        }
         running=false;generation++;
         main.removeCallbacks(refreshScan);main.removeCallbacks(resumeScan);main.removeCallbacks(uploadTick);
         stopScan();
@@ -182,7 +214,11 @@ final class CollectionEngine {
         network.execute(()->{try{
             int ack=0;BatchUploader.Result result=null;
             for(int i=0;i<10;i++){result=new BatchUploader(base,key,store).uploadOnce();ack+=result.acknowledged;if(result.pending==0||result.acknowledged==0)break;}
-            if(result!=null)syncStatus="전송 확인 "+ack+"건 · 대기 "+result.pending+"건 · "+result.message;
+            if(result!=null)syncStatus="관측 전송 확인 "+ack+"건 · 대기 "+result.pending+"건 · "+result.message;
+            if(windowStore.countPending()>0){
+                BatchUploader.Result sent=windowStore.uploadOnce(base,key);
+                syncStatus+="\n수신 창 전송 확인 "+sent.acknowledged+"건 · 대기 "+sent.pending+"건 · "+sent.message;
+            }
         }catch(Exception error){syncStatus="전송 실패 · 대기열 유지";note(syncStatus+" · "+safe(error));}finally{syncing.set(false);}});
     }
     String status() {
