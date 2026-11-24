@@ -17,7 +17,7 @@ import kr.ac.campusroute.ui.*
 
 /** D-1's Java search/detail UI with D-2 Compose/OpenGL map attached through its public contract. */
 @Composable
-fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocationBinding) {
+fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocationBinding, onSearch: () -> Unit = {}) {
     if(state.navigating) {
         Column(Modifier.fillMaxSize()) {
             CampusMapPanel(model.campus,state.route,state.destination,location.state,Modifier.weight(1f).fillMaxWidth(),
@@ -42,6 +42,7 @@ fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocat
     Column(Modifier.fillMaxSize().imePadding()) {
         AndroidView(modifier=Modifier.weight(1f).fillMaxWidth(), factory={ context ->
             DestinationHomeView(context) {}.apply host@ {
+                setSearchAction(onSearch)
                 setDestinations(catalog)
                 restoreSelection(saved)
                 state.destination?.let { selectDestination(it) }

@@ -19,6 +19,7 @@ import kr.ac.campusroute.data.repository.AssetCampusRepository
 import kr.ac.campusroute.ui.CampusViewModel
 import kr.ac.campusroute.ui.map.HomeScreen
 import kr.ac.campusroute.ui.map.DepartureDialog
+import kr.ac.campusroute.ui.map.DestinationSearchScreen
 import kr.ac.campusroute.ui.map.rememberDeviceLocation
 import kr.ac.campusroute.ui.navigation.NavigationScreen
 
@@ -37,15 +38,21 @@ class MainActivity : ComponentActivity() {
                 LaunchedEffect(location.state) { model.updateLocation(location.state) }
                 val displayLocation=location.copy(state=state.location,headingDegrees=location.headingDegrees.takeIf { state.location.canFollow })
                 var tab by rememberSaveable { mutableIntStateOf(0) }
+                var searching by rememberSaveable { mutableStateOf(false) }
                 BackHandler(state.navigating) { if (state.mapPreview) model.toggleMap() else model.end() }
                 DepartureDialog(model,state) { tab=1; model.clearMessage() }
                 Surface(Modifier.fillMaxSize()) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         if (state.navigating && !state.mapPreview) NavigationScreen(model, state, displayLocation.headingDegrees)
                         else if(state.navigating) HomeScreen(model,state,displayLocation)
+                        else if (searching) DestinationSearchScreen(model, onBack={ searching=false }, onSelected={
+                            searching=false
+                            model.select(it)
+                            model.requestStart()
+                        })
                         else Column(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f).fillMaxWidth()) {
-                                if(tab==0) HomeScreen(model,state,displayLocation)
+                                if(tab==0) HomeScreen(model,state,displayLocation,onSearch={ searching=true })
                                 else SharedRoutesScreen(model,state,displayLocation)
                             }
                             NavigationBar {

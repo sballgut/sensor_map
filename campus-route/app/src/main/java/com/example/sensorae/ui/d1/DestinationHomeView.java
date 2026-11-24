@@ -39,6 +39,10 @@ public final class DestinationHomeView extends LinearLayout {
         routeMessage = message; routeEnabled = enabled; renderSheet();
     }
     public void setLocationStatus(String message) { locationStatus.setText(message); }
+    public void setSearchAction(Runnable action) {
+        search.setFocusable(false);
+        search.setOnClickListener(view -> action.run());
+    }
 
 
     public DestinationHomeView(Context context, Runnable openCollection) {
