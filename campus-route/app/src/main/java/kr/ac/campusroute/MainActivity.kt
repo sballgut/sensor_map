@@ -17,6 +17,7 @@ import androidx.lifecycle.compose.*
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kr.ac.campusroute.data.repository.AssetCampusRepository
 import kr.ac.campusroute.ui.CampusViewModel
+import kr.ac.campusroute.ui.map.CampusBottomTabs
 import kr.ac.campusroute.ui.map.HomeScreen
 import kr.ac.campusroute.ui.map.DepartureDialog
 import kr.ac.campusroute.ui.map.DestinationSearchScreen
@@ -55,10 +56,7 @@ class MainActivity : ComponentActivity() {
                                 if(tab==0) HomeScreen(model,state,displayLocation,onSearch={ searching=true })
                                 else SharedRoutesScreen(model,state,displayLocation)
                             }
-                            NavigationBar {
-                                NavigationBarItem(selected=tab==0,onClick={tab=0; model.clearMessage()},icon={Text("⌖")},label={Text("지도")})
-                                NavigationBarItem(selected=tab==1,onClick={tab=1; model.clearMessage()},icon={Text("⇄")},label={Text("공유 경로")})
-                            }
+                            CampusBottomTabs(tab) { tab=it; model.clearMessage() }
                         }
                     }
                 }

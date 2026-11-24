@@ -8,6 +8,7 @@ import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
@@ -29,6 +30,11 @@ public final class DestinationHomeView extends LinearLayout {
     private final TextView modeLabel, mapLabel;
     private final EditText search;
     private boolean restoring;
+    private LinearLayout sheetContainer;
+    private TextView sheetHandle;
+    private boolean sheetExpanded;
+    private float dragStartY;
+    private int dragStartHeight;
     private Runnable routeAction;
     private String routeMessage = "현재 위치에서 길찾기";
     private boolean routeEnabled = true;
@@ -65,8 +71,6 @@ public final class DestinationHomeView extends LinearLayout {
         search.setHint("어디로 갈까요?"); search.setHintTextColor(MUTED); search.setBackgroundColor(Color.TRANSPARENT);
         search.setContentDescription("건물 이름 검색"); search.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
         searchBox.addView(search, new LayoutParams(0, dp(50), 1));
-        Button clear = button("지우기", () -> { search.setText(""); controller.clearSelection(); renderSheet(); });
-        clear.setContentDescription("검색어와 목적지 선택 지우기"); searchBox.addView(clear, new LayoutParams(-2, dp(48)));
         LayoutParams searchParams = new LayoutParams(-1, -2); searchParams.setMargins(dp(16), dp(4), dp(16), dp(4));
         addView(searchBox, searchParams);
 
@@ -87,18 +91,39 @@ public final class DestinationHomeView extends LinearLayout {
             public void onSelectionCleared() { mapLabel.setText("목적지를 선택해보세요"); }
         });
 
-        ScrollView sheetScroll = new ScrollView(context) {
-            @Override protected void onMeasure(int widthSpec, int heightSpec) {
-                int available = DestinationHomeView.this.getHeight();
-                int cap = available > 0 ? Math.round(available * .36f) : dp(280);
-                int parentMode = MeasureSpec.getMode(heightSpec), parentSize = MeasureSpec.getSize(heightSpec);
-                if (parentMode != MeasureSpec.UNSPECIFIED) cap = Math.min(cap, parentSize);
-                super.onMeasure(widthSpec, MeasureSpec.makeMeasureSpec(Math.max(0, cap), MeasureSpec.AT_MOST));
+        sheetContainer = column();
+        sheetContainer.setBackground(background(Color.WHITE, 24));
+        sheetHandle = text("━━   목적지 선택   ⌃", 14, MUTED);
+        sheetHandle.setGravity(Gravity.CENTER);
+        sheetHandle.setContentDescription("목적지 목록 펼치기");
+        sheetHandle.setOnClickListener(v -> setSheetExpanded(!sheetExpanded));
+        sheetHandle.setOnTouchListener((v, event) -> {
+            switch (event.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    dragStartY = event.getRawY(); dragStartHeight = sheetContainer.getHeight();
+                    v.getParent().requestDisallowInterceptTouchEvent(true); return true;
+                case MotionEvent.ACTION_MOVE:
+                    int height = Math.max(dp(100), Math.min(expandedSheetHeight(),
+                        dragStartHeight + Math.round(dragStartY - event.getRawY())));
+                    ViewGroup.LayoutParams params = sheetContainer.getLayoutParams();
+                    params.height = height; sheetContainer.setLayoutParams(params); return true;
+                case MotionEvent.ACTION_UP:
+                    if (Math.abs(event.getRawY() - dragStartY) < dp(8)) v.performClick();
+                    else setSheetExpanded(event.getRawY() < dragStartY);
+                    return true;
+                case MotionEvent.ACTION_CANCEL:
+                    setSheetExpanded(sheetExpanded); return true;
+                default: return false;
             }
-        };
-        sheetScroll.setBackground(background(Color.WHITE, 20));
-        sheet = column(); sheet.setPadding(dp(16), dp(8), dp(16), dp(8)); sheetScroll.addView(sheet);
-        addView(sheetScroll, new LayoutParams(-1, -2));
+        });
+        sheetContainer.addView(sheetHandle, new LayoutParams(-1, dp(48)));
+        ScrollView sheetScroll = new ScrollView(context);
+        sheet = column(); sheet.setPadding(dp(16), 0, dp(16), dp(12)); sheetScroll.addView(sheet);
+        sheetContainer.addView(sheetScroll, new LayoutParams(-1, 0, 1));
+        addView(sheetContainer, new LayoutParams(-1, dp(100)));
+        addOnLayoutChangeListener((v,l,t,r,b,ol,ot,or,ob) -> {
+            if (b-t != ob-ot && sheetExpanded) setSheetExpanded(true);
+        });
         search.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence value, int start, int count, int after) {}
             public void onTextChanged(CharSequence value, int start, int before, int count) {
@@ -111,6 +136,16 @@ public final class DestinationHomeView extends LinearLayout {
             return false;
         });
         renderSheet();
+    }
+
+    private int expandedSheetHeight() { return Math.max(dp(100), Math.round(getHeight() * .55f)); }
+    private void setSheetExpanded(boolean expanded) {
+        sheetExpanded = expanded;
+        if (sheetContainer == null) return;
+        ViewGroup.LayoutParams params = sheetContainer.getLayoutParams();
+        if (params != null) { params.height = expanded ? expandedSheetHeight() : dp(100); sheetContainer.setLayoutParams(params); }
+        sheetHandle.setText(expanded ? "━━   목적지 선택   ⌄" : "━━   목적지 선택   ⌃");
+        sheetHandle.setContentDescription(expanded ? "목적지 목록 접기" : "목적지 목록 펼치기");
     }
 
     /** UI thread only. The map must be unattached; attaching replays current selection. */
@@ -127,16 +162,18 @@ public final class DestinationHomeView extends LinearLayout {
     /** D-2 calls this when a registered building is tapped on the map. */
     public boolean selectDestination(String id) {
         if (!controller.select(id)) return false;
-        hideKeyboard(); search.clearFocus(); renderSheet(); return true;
+        hideKeyboard(); search.clearFocus(); setSheetExpanded(true); renderSheet(); return true;
     }
 
     public void saveSelection(Bundle state) {
+        state.putBoolean("d1.sheetExpanded", sheetExpanded);
         state.putString("d1.query", controller.query());
         state.putString("d1.selected", controller.selected() == null ? null : controller.selected().id);
     }
 
     public void restoreSelection(Bundle state) {
         if (state == null) return;
+        setSheetExpanded(state.getBoolean("d1.sheetExpanded", false));
         restoring = true; search.setText(state.getString("d1.query", "")); restoring = false;
         controller.restore(search.getText().toString(), state.getString("d1.selected")); renderSheet();
     }
@@ -164,7 +201,7 @@ public final class DestinationHomeView extends LinearLayout {
         }
         List<Destination> results = controller.results();
         String heading = controller.query().trim().isEmpty() ? "목적지 선택" : "검색 결과 " + results.size() + "개";
-        TextView title = text(heading, 20, INK); title.setTypeface(Typeface.DEFAULT, Typeface.BOLD); sheet.addView(title);
+        if (!controller.query().trim().isEmpty()) { TextView title = text(heading, 18, INK); title.setTypeface(Typeface.DEFAULT, Typeface.BOLD); sheet.addView(title); }
         if (results.isEmpty()) {
             addSheetText("검색 결과가 없어요. 다른 건물 이름을 입력해보세요.", 14, MUTED, 14);
             return;
@@ -174,7 +211,7 @@ public final class DestinationHomeView extends LinearLayout {
             item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); item.setTextSize(16);
             item.setPadding(dp(14), 0, dp(14), 0); item.setBackground(background(Color.rgb(246, 248, 246), 10));
             item.setContentDescription(d.name + " 목적지 선택" + (d.isDemo ? ", 시험 자료" : ""));
-            LayoutParams itemParams = new LayoutParams(-1, dp(54)); itemParams.topMargin = dp(8); sheet.addView(item, itemParams);
+            LayoutParams itemParams = new LayoutParams(-1, dp(48)); itemParams.topMargin = dp(4); sheet.addView(item, itemParams);
         }
     }
 

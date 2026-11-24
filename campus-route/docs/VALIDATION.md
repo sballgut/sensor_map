@@ -1,5 +1,12 @@
 # 검증 기록
 
+## 2026-11-24 접이식 목적지 패널과 하단 탭
+
+- testDebugUnitTest / assembleDebug / lintDebug 성공.
+- API 37 에뮬레이터에 최신 APK 설치 후 홈 지우기 제거, 기본 목적지 한 행, 손잡이 위 드래그 펼침, 공유 경로 탭 이동 및 지도 복귀 확인.
+- 스크린샷: screenshots/compact-home.png, screenshots/expanded-destinations.png. 실제 Galaxy S26+ 확인은 미수행.
+- 사용자 요청으로 GitHub 푸시하지 않음.
+
 ## 2026-11-18 위치 점과 방향 화살표
 
 - 사람 메시를 제거하고 흰 테두리의 파란 위치 점, 작은 삼각 방향 표시, 반투명 강조 영역을 적용했다. 2D 화살표에도 흰 테두리를 적용했다.
