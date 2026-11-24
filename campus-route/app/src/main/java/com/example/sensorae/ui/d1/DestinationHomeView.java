@@ -51,9 +51,7 @@ public final class DestinationHomeView extends LinearLayout {
         heading.addView(name);
         modeLabel = text("시험 모드 · 목적지 예시", 12, GREEN); heading.addView(modeLabel);
         header.addView(heading, new LayoutParams(0, -2, 1));
-        Button settings = button("앱 안내", openCollection);
-        settings.setContentDescription("위치 사용 및 지도 안내 열기");
-        header.addView(settings, new LayoutParams(-2, dp(48))); addView(header);
+        addView(header);
 
         LinearLayout searchBox = row();
         searchBox.setPadding(dp(12), dp(2), dp(4), dp(2)); searchBox.setBackground(background(Color.WHITE, 18));

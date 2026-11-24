@@ -64,8 +64,6 @@ fun CampusMapPanel(
         else CampusMap(campus,route,current,fix?.accuracyMetres,location.canFollow,selectedDestinationId,center,zoom,pan,transform,onDestinationSelected,headingDegrees)
         Row(Modifier.align(Alignment.TopCenter).fillMaxWidth().horizontalScroll(rememberScrollState()).padding(6.dp), horizontalArrangement=Arrangement.spacedBy(4.dp)) {
             MapControl(if(show3d) "2D" else "3D", "2D/3D 전환") { show3d=!show3d; pan=Offset.Zero }
-            MapControl("＋", "지도 확대") { zoom=(zoom*1.3f).coerceAtMost(12f) }
-            MapControl("−", "지도 축소") { zoom=(zoom/1.3f).coerceAtLeast(.5f) }
             MapControl("내 위치", "내 위치 또는 위치 설정") {
                 when {
                     location.condition==LocationCondition.PERMISSION_REQUIRED -> if(permissionDenied) onOpenLocationSettings() else onRequestLocation()

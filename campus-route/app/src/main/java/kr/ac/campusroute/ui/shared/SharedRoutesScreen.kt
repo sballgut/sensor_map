@@ -52,6 +52,7 @@ fun SharedRoutesScreen(model: CampusViewModel, state: CampusState, location: Dev
             Text("공유 경로",style=MaterialTheme.typography.headlineSmall)
             TextButton(onClick={picker.launch(arrayOf("application/json","text/plain","application/octet-stream"))},enabled=!busy) { Text(if(busy) "가져오는 중…" else "파일 가져오기") }
         }
+        Text("서버 경로 연동 준비 중 · 기기에 저장한 공유 경로를 볼 수 있어요.", Modifier.padding(horizontal=16.dp), style=MaterialTheme.typography.bodySmall)
         error?.let { Text(it,Modifier.padding(horizontal=16.dp),color=MaterialTheme.colorScheme.error) }
         if(selected==null) {
             if(routes.isEmpty()) Column(Modifier.padding(24.dp)) {

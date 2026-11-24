@@ -89,8 +89,7 @@ class CampusViewModel(val campus: Campus, private val planner: RoutePlanner = AS
             error("출구 밖에서 새 위치를 기다려 주세요. 건물 외곽과 위치 오차가 겹치면 실외 확인을 보류합니다."); return
         }
         if(buildingLocation.relation==BuildingRelation.INSIDE_FOOTPRINT) {
-            error("${buildingLocation.building?.name?.ifBlank { "건물" }} 부근입니다. 실내에서는 건물을 선택하고, 실외라면 건물에서 조금 떨어져 위치를 다시 확인해 주세요.")
-            if(indoor==null) mutable.update { it.copy(departureDialog=true) }
+            error("${buildingLocation.building?.name?.ifBlank { "건물" }} 부근입니다. 출구 밖에서 위치를 다시 확인한 뒤 기본 길찾기를 시작해 주세요.")
             return
         }
         planning?.cancel()
