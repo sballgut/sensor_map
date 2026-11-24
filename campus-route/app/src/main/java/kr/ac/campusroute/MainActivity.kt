@@ -18,6 +18,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kr.ac.campusroute.data.repository.AssetCampusRepository
 import kr.ac.campusroute.ui.CampusViewModel
 import kr.ac.campusroute.ui.map.CampusBottomTabs
+import kr.ac.campusroute.ui.map.CampusPalette
+import kr.ac.campusroute.ui.map.PaletteSheet
 import kr.ac.campusroute.ui.map.HomeScreen
 import kr.ac.campusroute.ui.map.DepartureDialog
 import kr.ac.campusroute.ui.map.DestinationSearchScreen
@@ -29,7 +31,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF2166F3), background = Color(0xFFF5F5F5), surface = Color.White, secondaryContainer = Color(0xFFF0F0F0), onSecondaryContainer = Color(0xFF303030), surfaceVariant = Color(0xFFF1F1F1), onSurfaceVariant = Color(0xFF555555))) {
+            val appearance = remember { getSharedPreferences("appearance", MODE_PRIVATE) }
+            var paletteId by rememberSaveable { mutableStateOf(appearance.getString("palette", "mint") ?: "mint") }
+            val palette = CampusPalette.entries.firstOrNull { it.id == paletteId } ?: CampusPalette.MINT
+            var choosingPalette by rememberSaveable { mutableStateOf(false) }
+            MaterialTheme(colorScheme = lightColorScheme(primary = Color(0xFF2166F3), background = palette.background, surface = Color.White, secondaryContainer = palette.selected, onSecondaryContainer = Color(0xFF303030), surfaceVariant = palette.background, onSurfaceVariant = Color(0xFF555555))) {
                 val model: CampusViewModel = viewModel(factory = object : ViewModelProvider.Factory {
                     @Suppress("UNCHECKED_CAST")
                     override fun <T : ViewModel> create(modelClass: Class<T>): T = CampusViewModel(AssetCampusRepository(assets).load()) as T
@@ -42,7 +48,11 @@ class MainActivity : ComponentActivity() {
                 var searching by rememberSaveable { mutableStateOf(false) }
                 BackHandler(state.navigating) { if (state.mapPreview) model.toggleMap() else model.end() }
                 DepartureDialog(model,state) { tab=1; model.clearMessage() }
-                Surface(Modifier.fillMaxSize()) {
+                if (choosingPalette) PaletteSheet(palette, onDismiss={ choosingPalette=false }, onSelect={
+                    paletteId=it.id
+                    appearance.edit().putString("palette", it.id).apply()
+                })
+                Surface(Modifier.fillMaxSize(), color=palette.background) {
                     Box(Modifier.fillMaxSize().safeDrawingPadding()) {
                         if (state.navigating && !state.mapPreview) NavigationScreen(model, state, displayLocation.headingDegrees)
                         else if(state.navigating) HomeScreen(model,state,displayLocation)
@@ -53,7 +63,7 @@ class MainActivity : ComponentActivity() {
                         })
                         else Column(Modifier.fillMaxSize()) {
                             Box(Modifier.weight(1f).fillMaxWidth()) {
-                                if(tab==0) HomeScreen(model,state,displayLocation,onSearch={ searching=true })
+                                if(tab==0) HomeScreen(model,state,displayLocation,onSearch={ searching=true },onAppearance={ choosingPalette=true })
                                 else SharedRoutesScreen(model,state,displayLocation)
                             }
                             CampusBottomTabs(tab) { tab=it; model.clearMessage() }

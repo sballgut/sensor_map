@@ -13,6 +13,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.ImageButton;
+import kr.ac.campusroute.R;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -30,6 +32,17 @@ public final class DestinationHomeView extends LinearLayout {
     private final TextView modeLabel, mapLabel;
     private final EditText search;
     private boolean restoring;
+    private final ImageButton appearanceButton;
+    private int appearanceBackground = Color.rgb(234, 244, 239);
+    private int appearanceSelected = Color.rgb(212, 232, 220);
+    public void setAppearanceAction(Runnable action) { appearanceButton.setOnClickListener(v -> action.run()); }
+    public void setAppearanceColors(int backgroundColor, int selectedColor) {
+        if (appearanceBackground == backgroundColor && appearanceSelected == selectedColor) return;
+        appearanceBackground = backgroundColor;
+        appearanceSelected = selectedColor;
+        setBackgroundColor(backgroundColor);
+        renderSheet();
+    }
     private LinearLayout sheetContainer;
     private TextView sheetHandle;
     private boolean sheetExpanded;
@@ -53,7 +66,7 @@ public final class DestinationHomeView extends LinearLayout {
 
     public DestinationHomeView(Context context, Runnable openCollection) {
         super(context);
-        setOrientation(VERTICAL); setBackgroundColor(Color.rgb(247, 249, 247));
+        setOrientation(VERTICAL); setBackgroundColor(appearanceBackground);
 
         LinearLayout header = row(); header.setPadding(dp(16), dp(6), dp(12), dp(2));
         LinearLayout heading = column();
@@ -61,6 +74,14 @@ public final class DestinationHomeView extends LinearLayout {
         heading.addView(name);
         modeLabel = text("시험 모드 · 목적지 예시", 12, GREEN); heading.addView(modeLabel);
         header.addView(heading, new LayoutParams(0, -2, 1));
+        appearanceButton = new ImageButton(context);
+        appearanceButton.setImageResource(R.drawable.ic_palette);
+        appearanceButton.setContentDescription("화면 색상 선택");
+        appearanceButton.setPadding(dp(12), dp(12), dp(12), dp(12));
+        android.util.TypedValue ripple = new android.util.TypedValue();
+        context.getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, ripple, true);
+        appearanceButton.setBackgroundResource(ripple.resourceId);
+        header.addView(appearanceButton, new LayoutParams(dp(48), dp(48)));
         addView(header);
 
         LinearLayout searchBox = row();
@@ -195,7 +216,7 @@ public final class DestinationHomeView extends LinearLayout {
             addSheetText(selected.description, 14, MUTED, 10);
             if (!selected.hasCoordinates()) addSheetText("실제 지도 좌표는 아직 연결되지 않았어요.", 13, MUTED, 8);
             Button route = button(routeMessage, () -> { if (routeAction != null) routeAction.run(); }); route.setEnabled(routeAction != null && routeEnabled);
-            route.setBackground(background(PALE, 12)); route.setTextColor(MUTED);
+            route.setBackground(background(appearanceSelected, 12)); route.setTextColor(MUTED);
             LayoutParams routeParams = new LayoutParams(-1, dp(52)); routeParams.topMargin = dp(14); sheet.addView(route, routeParams);
             return;
         }
@@ -209,7 +230,7 @@ public final class DestinationHomeView extends LinearLayout {
         for (Destination d : results) {
             Button item = button(d.name + "   ›", () -> selectDestination(d.id));
             item.setGravity(Gravity.START | Gravity.CENTER_VERTICAL); item.setTextSize(16);
-            item.setPadding(dp(14), 0, dp(14), 0); item.setBackground(background(Color.rgb(246, 248, 246), 10));
+            item.setPadding(dp(14), 0, dp(14), 0); item.setBackground(background(appearanceBackground, 10));
             item.setContentDescription(d.name + " 목적지 선택" + (d.isDemo ? ", 시험 자료" : ""));
             LayoutParams itemParams = new LayoutParams(-1, dp(48)); itemParams.topMargin = dp(4); sheet.addView(item, itemParams);
         }

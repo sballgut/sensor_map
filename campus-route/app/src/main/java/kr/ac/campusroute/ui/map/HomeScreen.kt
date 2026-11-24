@@ -6,6 +6,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.unit.dp
@@ -17,7 +18,7 @@ import kr.ac.campusroute.ui.*
 
 /** D-1's Java search/detail UI with D-2 Compose/OpenGL map attached through its public contract. */
 @Composable
-fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocationBinding, onSearch: () -> Unit = {}) {
+fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocationBinding, onSearch: () -> Unit = {}, onAppearance: () -> Unit = {}) {
     if(state.navigating) {
         Column(Modifier.fillMaxSize()) {
             CampusMapPanel(model.campus,state.route,state.destination,location.state,Modifier.weight(1f).fillMaxWidth(),
@@ -34,7 +35,7 @@ fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocat
     val latest by rememberUpdatedState(state)
     val binding by rememberUpdatedState(location)
     val saved = rememberSaveable { Bundle() }
-    val theme=MaterialTheme.colorScheme
+    val theme by rememberUpdatedState(MaterialTheme.colorScheme)
     val catalog=remember(model.campus) { model.campus.destinations.map { d ->
         val n=model.campus.byId.getValue(d.nodeId)
         D1Destination(d.id,d.name,"건물 인근 보행로","OSM 지도 기반 목적지입니다. 실제 건물 출입구와 통행 가능 여부를 현장에서 확인하세요.",n.latitude,n.longitude,false,listOf(d.name.substringBefore(" ·")))
@@ -43,6 +44,7 @@ fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocat
         AndroidView(modifier=Modifier.weight(1f).fillMaxWidth(), factory={ context ->
             DestinationHomeView(context) {}.apply host@ {
                 setSearchAction(onSearch)
+                setAppearanceAction(onAppearance)
                 setDestinations(catalog)
                 restoreSelection(saved)
                 state.destination?.let { selectDestination(it) }
@@ -63,6 +65,8 @@ fun HomeScreen(model: CampusViewModel, state: CampusState, location: DeviceLocat
                 })
             }
         }, update={ view ->
+            view.setAppearanceAction(onAppearance)
+            view.setAppearanceColors(theme.background.toArgb(), theme.secondaryContainer.toArgb())
             view.setLocationStatus(state.message ?: locationMessage(location.state,location.denied))
             view.setRouteStatus(if(state.planning) "경로 계산 중…" else if(state.navigating) "안내 진행 중" else "현재 위치에서 길찾기",!state.planning && !state.navigating)
             view.saveSelection(saved)

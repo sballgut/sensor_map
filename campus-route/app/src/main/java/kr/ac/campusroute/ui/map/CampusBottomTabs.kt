@@ -19,14 +19,15 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun CampusBottomTabs(selected: Int, onSelect: (Int) -> Unit) {
+    val colors = MaterialTheme.colorScheme
     Surface(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=8.dp),
-        shape=RoundedCornerShape(40.dp),color=Color(0xFFF5F7F2),shadowElevation=8.dp) {
+        shape=RoundedCornerShape(40.dp),color=colors.background,shadowElevation=8.dp) {
         Row(Modifier.selectableGroup().padding(6.dp),horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             listOf("지도","공유 경로").forEachIndexed { index,label ->
                 val active=selected==index
                 val ink=if(active) Color(0xFF1670FF) else Color(0xFF383B39)
                 Column(Modifier.weight(1f)
-                    .background(if(active) Color(0xFFE0E5DC) else Color.Transparent,RoundedCornerShape(34.dp))
+                    .background(if(active) colors.secondaryContainer else Color.Transparent,RoundedCornerShape(34.dp))
                     .selectable(selected=active,role=Role.Tab,onClick={onSelect(index)})
                     .padding(vertical=8.dp),horizontalAlignment=Alignment.CenterHorizontally,
                     verticalArrangement=Arrangement.spacedBy(3.dp)) {
@@ -40,7 +41,7 @@ fun CampusBottomTabs(selected: Int, onSelect: (Int) -> Unit) {
                                 cubicTo(w*.86f,h*.48f,w*.65f,h*.72f,w*.5f,h*.95f); close()
                             }
                             drawPath(pin,ink)
-                            drawCircle(Color(0xFFF5F7F2),w*.12f,Offset(w*.5f,h*.31f))
+                            drawCircle(colors.background,w*.12f,Offset(w*.5f,h*.31f))
                         } else {
                             val route=Path().apply {
                                 moveTo(w*.19f,h*.82f); lineTo(w*.19f,h*.47f)
